@@ -1,14 +1,24 @@
-PATCH MÍNIMO GENESIS V10.7
+GENESIS LLA V10.7.3 — PATCH HEATMAP DEMOGRÁFICO
 
 NÃO apague o repositório.
 
 1. Extraia este ZIP.
 2. GitHub > Code > Add file > Upload files.
-3. Arraste todo o conteúdo extraído.
-4. Commit changes.
-5. Confira se index.html e package.json aparecem na raiz.
-6. Settings > Pages > Source = GitHub Actions.
-7. Actions > Deploy GENESIS to GitHub Pages.
+3. Arraste o conteúdo extraído, mantendo as pastas src/ e tests/.
+4. Aceite a substituição dos arquivos existentes e faça Commit changes.
+5. Aguarde Actions > Deploy GENESIS to GitHub Pages ficar verde.
+6. Abra Estudos & Gráficos e faça Ctrl+F5.
+7. Carregue TARGET ALL, selecione genes e marque:
+   "Heatmap demográfico — expressão × sexo/idade"
+   ou use o botão "Gerar gráficos", que agora inclui esse heatmap.
 
-Este patch contém apenas os arquivos que faltaram/foram críticos no upload anterior.
-Os arquivos grandes do GENESIS-R e o src/js já estão no repositório atual.
+O patch NÃO altera CSVs, dados do R, Top 30, DEA, Cox ou Kaplan-Meier.
+
+Método:
+- amostras basais deduplicadas por paciente;
+- SEX/GENDER + AGE/AGE_IN_DAYS;
+- corte etário = mediana da coorte elegível, sem valor clínico;
+- quatro grupos sexo × idade;
+- média do z-score de expressão por gene;
+- mínimo de 5 casos por grupo;
+- máximo de 20 genes.

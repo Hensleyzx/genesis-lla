@@ -1,10 +1,11 @@
 import '../css/genesis.css';
-import { mountLayout, injectFontAwesome, warningBanner, getChartTheme } from './common.js';
+import { mountLayout, injectFontAwesome, warningBanner, getChartTheme, graphReport } from './common.js';
 import { renderStudyManager } from './study-ui.js';
 import { DEFAULT_LLA_STUDY } from './cbio-api.js';
 import { loadDatapack } from './datapack.js';
 import { buildStudyAnalytics, volcanoPoints } from './research-analytics.js';
 import { buildReferenceVectors, buildRCompatibleReferenceVectors, rCompatibleExpressionValues, transformExpressionValue } from './analysis-engine.js';
+import { buildDemographicHeatmap } from './demographic-heatmap.js';
 import { univariate as coxUnivariate } from './cox.js';
 import { bhFdr } from './stats.js';
 import { analyzeSurvival, atRiskAt } from './survival.js';
@@ -136,6 +137,7 @@ function renderWorkspace(top10) {
       ${graphChoice('top30','Top 30 oficial — referência R','TARGET ALL · n=150 · usa a figura/valores validados pelo professor e pelo pipeline R.')}
       ${graphChoice('selectedmut','Frequência mutacional — genes selecionados','Mostra o valor de referência R quando disponível; fora da referência, identifica explicitamente o valor como exploratório do estudo ativo.')}
       ${graphChoice('mutheat','Heatmap mutacional basal — Top 30','Oncoprint binário simplificado da seleção basal; não substitui o Top 30 oficial n=150.')}
+      ${graphChoice('demographic','Heatmap demográfico — expressão × sexo/idade','Genes selecionados × quatro grupos de sexo e idade. Usa amostras basais, idade/sexo clínicos e z-score de expressão; a idade é dividida pela mediana da própria coorte.')}
       ${graphChoice('degs','Top DEGs — Relapse vs None', dp.pack.scope==='completo' ? 'DEA exploratória em escopo completo. Ainda não é limma/R validado.' : 'Exige escopo Completo para evitar FDR/DEGs calculados sobre painel parcial.', dp.pack.scope!=='completo')}
       ${graphChoice('volcano','Volcano Plot', dp.pack.scope==='completo' ? 'Usa a mesma DEA exploratória completa; validação final depende da saída R corrigida.' : 'Exige escopo Completo; no modo Expresso faltam genes para reproduzir a análise transcriptômica.', dp.pack.scope!=='completo')}
       ${graphChoice('cox','Forest Plot — Cox univariado','Roda somente os genes selecionados acima; HR por 1 DP de expressão.')}
@@ -181,7 +183,7 @@ function selectedGenes() {
 function generateGeneGraphs() {
   const genes = selectedGenes();
   if (!genes.length) return msg('gene-msg','Selecione pelo menos um gene antes de gerar os gráficos.',false);
-  const wanted = new Set(['selectedmut','cox','km']);
+  const wanted = new Set(['selectedmut','demographic','cox','km']);
   document.querySelectorAll('.result-graph').forEach(el => {
     if (wanted.has(el.value) && !el.disabled) el.checked = true;
   });
@@ -218,6 +220,7 @@ async function renderGeneratedGraphs(redrawOnly = false) {
     if (type === 'top30') cards.push(top30Card());
     if (type === 'selectedmut') cards.push(selectedMutationCard(genes));
     if (type === 'mutheat') cards.push(mutationHeatmapCard());
+    if (type === 'demographic') cards.push(demographicHeatmapCard(genes));
     if (type === 'degs') cards.push(degCard());
     if (type === 'volcano') cards.push(volcanoCard());
     if (type === 'cox') cards.push(coxCard(genes));
@@ -230,6 +233,7 @@ async function renderGeneratedGraphs(redrawOnly = false) {
   if (selectedGraphs.includes('top30') && drawTop30()) rendered.push({title:'Top 30 oficial — referência R', genes:[], status:'validado contra R'});
   if (selectedGraphs.includes('selectedmut') && drawSelectedMutation(genes)) rendered.push({title:'Frequência mutacional — genes selecionados', genes, status:allGenesHaveRReference(genes)?'referência R':'misto: referência R + exploratório'});
   if (selectedGraphs.includes('mutheat') && drawMutationHeatmap()) rendered.push({title:'Heatmap mutacional basal — Top 30', genes:[]});
+  if (selectedGraphs.includes('demographic') && drawDemographicHeatmap(genes)) rendered.push({title:'Heatmap demográfico — expressão × sexo/idade', genes});
   if (selectedGraphs.includes('degs') && drawDEGs()) rendered.push({title:'Top DEGs — Relapse vs None', genes:[]});
   if (selectedGraphs.includes('volcano') && drawVolcano()) rendered.push({title:'Volcano Plot — Relapse vs None', genes:[]});
   if (selectedGraphs.includes('cox') && drawCox(genes)) rendered.push({title:'Forest Plot — Cox univariado', genes});
@@ -237,7 +241,7 @@ async function renderGeneratedGraphs(redrawOnly = false) {
 
   if (!redrawOnly) {
     saveHistory(rendered);
-    msg('generation-msg', `${rendered.length} gráfico(s) preparado(s). O Top 30 e os valores mutacionais presentes na referência R são identificados como referência validada; Cox, KM, heatmap e análises locais continuam exploratórios até validação específica.`, true);
+    msg('generation-msg', `${rendered.length} gráfico(s) preparado(s). O Top 30 e os valores mutacionais presentes na referência R são identificados como referência validada; Cox, KM, heatmaps e análises locais continuam exploratórios até validação específica.`, true);
   }
 }
 
@@ -249,9 +253,98 @@ function validatedStatusHeader(extra='') {
   return `<div class="validated-result-head"><span class="quality-badge high"><i class="fa-solid fa-shield-heart"></i> VALIDADO CONTRA R</span><span class="study-pill">TARGET ALL</span><span class="study-pill">n=150</span>${extra}</div>`;
 }
 
+
+function top30GraphReport() {
+  return graphReport({
+    what: 'Ranking de frequência de mutações/alterações no TARGET ALL. A barra indica a porcentagem de amostras mutacionais em que cada gene apresentou alteração.',
+    finding: 'Na referência R com n=150, NRAS foi o mais frequente (10,7%; 16/150), seguido de KRAS (5,3%; 8/150). TP53, PTPN11, JAK2 e CREBBP aparecem com 4,0%.',
+    caution: 'Frequência na coorte não é risco individual, não define prognóstico sozinha e não representa uma faixa de normalidade clínica.',
+    source: 'Referência validada no R',
+  });
+}
+
+function selectedMutationGraphReport(rows) {
+  const ordered = [...rows].sort((a,b) => b.value - a.value);
+  const first = ordered[0];
+  const nR = rows.filter(r => r.source === 'R').length;
+  return graphReport({
+    what: 'Compara a frequência mutacional apenas dos genes selecionados. Barras de referência R usam o TARGET ALL n=150; valores locais usam o denominador da coorte ativa.',
+    finding: first
+      ? `${first.gene} apresentou a maior frequência entre os genes selecionados (${Number(first.value).toFixed(1)}%). ${nR} de ${rows.length} valor(es) vieram diretamente da referência R.`
+      : 'Não houve valores utilizáveis.',
+    caution: 'Comparar frequências só é válido quando a fonte e o denominador estão identificados. O gráfico não informa efeito funcional ou risco individual.',
+    source: nR === rows.length ? 'Referência R' : nR ? 'R + exploratório local' : 'Exploratório local',
+  });
+}
+
+function mutationHeatmapGraphReport() {
+  const genes = Object.values(dp?.mut?.basal?.byGene || {})
+    .filter(x => Number.isFinite(Number(x.frequency)))
+    .sort((a,b) => Number(b.frequency) - Number(a.frequency));
+  const first = genes[0];
+  const n = dp?.pack?.mutationSelection?.sampleIds?.length || 0;
+  return graphReport({
+    what: 'Mapa binário de alterações na seleção basal: cada linha é um gene, cada coluna é uma amostra e cada célula preenchida indica alteração detectada.',
+    finding: `${n} amostras basais compõem este universo.${first ? ` Entre os genes exibidos, ${first.symbol} teve a maior frequência basal (${Number(first.frequency).toFixed(1)}%).` : ''}`,
+    caution: 'Este heatmap usa a coorte basal deduplicada e, por isso, não deve ser confundido com o Top 30 oficial de n=150.',
+    source: 'Exploratório local · basal',
+  });
+}
+
+function degGraphReport() {
+  const rows = analytics?.topDEGs || [];
+  const first = rows[0];
+  const nDeg = Number(analytics?.dea?.nDEG || rows.length || 0);
+  return graphReport({
+    what: 'Mostra genes diferencialmente expressos entre Relapse e None. Barras positivas indicam maior expressão relativa em Relapse e negativas, menor expressão relativa.',
+    finding: `${nDeg} gene(s) passaram o critério de DEA nesta execução.${first ? ` O gene mais bem ranqueado por FDR foi ${first.gene} (log2FC ${Number(first.logFC).toFixed(3)}; FDR ${fmtP(first['adj.P.Val'])}).` : ''}`,
+    caution: 'É uma DEA exploratória local. Diferença de expressão é associação entre grupos e não demonstra causalidade nem diagnostica recaída.',
+    source: 'Exploratório local',
+  });
+}
+
+function volcanoGraphReport() {
+  const table = analytics?.dea?.table || [];
+  const valid = table.filter(r => Number.isFinite(Number(r.logFC)) && Number.isFinite(Number(r['adj.P.Val'])) && Number(r['adj.P.Val']) > 0);
+  const sig = valid.filter(r => Number(r['adj.P.Val']) < .05 && Math.abs(Number(r.logFC)) > .5);
+  const up = sig.filter(r => Number(r.logFC) > 0).length;
+  const down = sig.length - up;
+  const first = [...sig].sort((a,b) => Number(a['adj.P.Val']) - Number(b['adj.P.Val']))[0];
+  return graphReport({
+    what: 'Volcano Plot combina tamanho do efeito (log2FC, eixo X) e significância ajustada (−log10 FDR, eixo Y). Pontos mais afastados do centro e mais altos merecem maior atenção estatística.',
+    finding: `${sig.length} gene(s) passaram FDR < 0,05 e |log2FC| > 0,5: ${up} up e ${down} down.${first ? ` O menor FDR entre eles foi de ${first.gene}.` : ''}`,
+    caution: 'Este Volcano é exploratório e depende do universo de genes e da transformação da coorte ativa. Não deve substituir a saída R sem validação equivalente.',
+    source: 'Exploratório local',
+  });
+}
+
+function coxGraphReport(rows) {
+  const sigFdr = rows.filter(r => Number(r.q_value) < .05);
+  const best = [...rows].sort((a,b) => Number(a.q_value) - Number(b.q_value) || Number(a.p_value) - Number(b.p_value))[0];
+  return graphReport({
+    what: 'Forest Plot do Cox univariado. HR abaixo de 1 representa associação com menor hazard e HR acima de 1 com maior hazard para +1 DP de expressão; o IC95% mostra a incerteza.',
+    finding: `${sigFdr.length} de ${rows.length} gene(s) apresentaram FDR < 0,05 nesta execução.${best ? ` O menor FDR foi de ${best.Gene} (HR ${Number(best.HR).toFixed(3)}; IC95% ${Number(best.HR_lower).toFixed(3)}–${Number(best.HR_upper).toFixed(3)}; FDR ${fmtP(best.q_value)}).` : ''}`,
+    caution: 'Modelo univariado e exploratório. Associação não implica causalidade e não fornece uma probabilidade individual de sobrevivência.',
+    source: 'Exploratório local · Cox',
+  });
+}
+
+function kmGraphReport(gene, survival) {
+  const p = Number(survival?.logRank?.p);
+  const significant = Number.isFinite(p) && p < .05;
+  return graphReport({
+    what: `Kaplan–Meier de Sobrevida Global para ${gene}, comparando grupos Alto e Baixo definidos pela mediana de expressão. O segundo gráfico compara eventos observados e esperados usados no log-rank.`,
+    finding: Number.isFinite(p)
+      ? `${significant ? 'O log-rank detectou diferença estatisticamente significativa' : 'O log-rank não detectou diferença estatisticamente significativa'} pelo limiar de 0,05 (p=${fmtP(p)}; Alto n=${survival.nAlto}; Baixo n=${survival.nBaixo}). A direção e a magnitude da separação devem ser observadas nas próprias curvas e nos IC95%.`
+      : 'O p do log-rank não ficou disponível.',
+    caution: 'As curvas descrevem grupos da coorte e são sensíveis a censura, tamanho amostral e corte pela mediana. Não representam previsão individual.',
+    source: 'Exploratório local · OS',
+  });
+}
+
 function top30Card() {
   if (!rReference?.genes?.length) return noDataCard('Top 30 oficial — referência R','O arquivo numérico da referência R não pôde ser carregado.');
-  return `<div class="card result-graph-card">${validatedStatusHeader()}<div class="card__title">Top 30 Genes Mais Mutados/Alterados</div><div class="card__subtitle">Figura oficial do projeto. Denominador mutacional: 150 amostras perfiladas. Este gráfico substitui o antigo ranking roxo de n=81.</div><div class="r-reference-box mt-4"><img id="result-top30-reference" src="${import.meta.env.BASE_URL}fig1_top30_genes_R_original.jpeg" alt="Top 30 validado contra R"></div><p class="chart-note mt-3">NRAS 10,7% · KRAS 5,3% · TP53/PTPN11/JAK2/CREBBP 4,0%. Valores completos auditáveis em resultados-r.html.</p></div>`;
+  return `<div class="card result-graph-card">${validatedStatusHeader()}<div class="card__title">Top 30 Genes Mais Mutados/Alterados</div><div class="card__subtitle">Figura oficial do projeto. Denominador mutacional: 150 amostras perfiladas. Este gráfico substitui o antigo ranking roxo de n=81.</div><div class="r-reference-box mt-4"><img id="result-top30-reference" src="${import.meta.env.BASE_URL}fig1_top30_genes_R_original.jpeg" alt="Top 30 validado contra R"></div>${top30GraphReport()}<p class="chart-note mt-3">NRAS 10,7% · KRAS 5,3% · TP53/PTPN11/JAK2/CREBBP 4,0%. Valores completos auditáveis em resultados-r.html.</p></div>`;
 }
 
 function selectedMutationCard(genes) {
@@ -259,25 +352,95 @@ function selectedMutationCard(genes) {
   const rows = selectedMutationRows(genes);
   if (!rows.length) return noDataCard('Frequência mutacional — genes selecionados','Nenhum dos genes selecionados possui frequência mutacional disponível.');
   const hasRef = rows.some(r=>r.source==='R');
-  return `<div class="card result-graph-card">${hasRef?validatedStatusHeader('<span class="study-pill">valores R quando disponíveis</span>'):statusHeader()}<div class="card__title">Frequência mutacional — genes selecionados</div><div class="card__subtitle">“Valor de referência” significa a frequência observada na saída R do estudo, e não um valor clínico normal. Genes que não constam no Top 30 R são marcados como exploratórios do estudo ativo.</div><div class="single-result-canvas"><canvas id="result-selected-mut"></canvas></div><div id="selected-mut-meta" class="mt-4"></div></div>`;
+  return `<div class="card result-graph-card">${hasRef?validatedStatusHeader('<span class="study-pill">valores R quando disponíveis</span>'):statusHeader()}<div class="card__title">Frequência mutacional — genes selecionados</div><div class="card__subtitle">“Valor de referência” significa a frequência observada na saída R do estudo, e não um valor clínico normal. Genes que não constam no Top 30 R são marcados como exploratórios do estudo ativo.</div><div class="single-result-canvas"><canvas id="result-selected-mut"></canvas></div>${selectedMutationGraphReport(rows)}<div id="selected-mut-meta" class="mt-4"></div></div>`;
 }
 
 function mutationHeatmapCard() {
   const basalGenes=Object.values(dp.mut?.basal?.byGene||{});
   if (!basalGenes.length || !(dp.pack?.mutationSelection?.sampleIds||[]).length) return noDataCard('Heatmap mutacional basal — Top 30','Matriz mutacional basal não disponível.');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${dp.pack.mutationSelection.sampleIds.length} amostras basais</span>`)}<div class="card__title">Heatmap mutacional basal — Top 30 genes</div><div class="card__subtitle">Esta visualização usa somente a seleção basal por paciente e é deliberadamente separada do Top 30 oficial n=150. Linhas = genes; colunas = amostras basais; célula preenchida = alteração detectada.</div><div class="mutation-heatmap-scroll mt-4"><canvas id="result-mutheat"></canvas></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${dp.pack.mutationSelection.sampleIds.length} amostras basais</span>`)}<div class="card__title">Heatmap mutacional basal — Top 30 genes</div><div class="card__subtitle">Esta visualização usa somente a seleção basal por paciente e é deliberadamente separada do Top 30 oficial n=150. Linhas = genes; colunas = amostras basais; célula preenchida = alteração detectada.</div><div class="mutation-heatmap-scroll mt-4"><canvas id="result-mutheat"></canvas></div>${mutationHeatmapGraphReport()}</div>`;
+}
+
+
+function demographicHeatmapCard(genes) {
+  const data = buildDemographicHeatmap(dp, genes, { maxGenes:20, minGroupN:5 });
+  if (!data.available) return noDataCard('Heatmap demográfico — expressão × sexo/idade', data.reason || 'Dados demográficos e de expressão insuficientes.');
+  const groupPills = data.groups.map(g => `<span class="study-pill">${esc(g.label)} · n=${g.n}</span>`).join('');
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">basal por paciente</span><span class="study-pill">corte etário: mediana ${esc(data.cutoffLabel)} anos</span>`)}
+    <div class="card__title">Heatmap demográfico — expressão × sexo/idade</div>
+    <div class="card__subtitle">Expressão média padronizada (z-score) dos genes selecionados em quatro grupos demográficos. O corte etário é a mediana da própria coorte elegível, usado apenas para visualização e <strong>não</strong> como limiar clínico.</div>
+    <div class="demographic-group-pills mt-3">${groupPills}</div>
+    <div id="result-demographic-heatmap" class="demographic-heatmap-wrap mt-4"></div>
+    <div id="demographic-heatmap-report"></div>
+  </div>`;
+}
+
+function demographicHeatmapReport(data) {
+  const strongest = data?.strongest;
+  const group = strongest ? data.groups.find(g => g.key === strongest.group) : null;
+  const direction = strongest && Number(strongest.value) >= 0 ? 'acima' : 'abaixo';
+  return graphReport({
+    what: 'Resume a expressão dos genes selecionados por sexo clínico e faixa etária. Cada célula é a média do z-score de expressão do gene naquele grupo; valores positivos ficam acima da média daquele gene na coorte basal e valores negativos, abaixo.',
+    finding: strongest && group
+      ? `${data.eligibleN} casos basais tinham simultaneamente expressão, idade e sexo utilizáveis. O maior desvio médio absoluto foi observado em ${strongest.gene} no grupo ${group.label} (z=${Number(strongest.value).toFixed(2)}, ${direction} da média do gene).`
+      : `${data?.eligibleN || 0} casos basais tinham dados demográficos e expressão utilizáveis.`,
+    caution: `A idade foi dividida pela mediana da coorte (${data?.cutoffLabel || '—'} anos) somente para visualização. Este heatmap é descritivo, não testa significância entre grupos, não demonstra efeito de sexo/idade sobre o gene e não define risco individual.`,
+    source: 'Exploratório local · TARGET ALL/cBioPortal',
+  });
+}
+
+function drawDemographicHeatmap(genes) {
+  const host = document.getElementById('result-demographic-heatmap');
+  const report = document.getElementById('demographic-heatmap-report');
+  if (!host || !report) return false;
+  const data = buildDemographicHeatmap(dp, genes, { maxGenes:20, minGroupN:5 });
+  if (!data.available) {
+    host.innerHTML = `<div class="empty-science">${esc(data.reason || 'Dados insuficientes.')}</div>`;
+    return false;
+  }
+
+  const head = data.groups.map(g => `<th><span>${esc(g.short)}</span><small>n=${g.n}</small></th>`).join('');
+  const rows = data.rows.map(row => `<tr><th>${esc(row.gene)}</th>${row.cells.map(cell => {
+    const v = Number(cell.value);
+    const label = Number.isFinite(v) ? v.toFixed(2).replace('.', ',') : '—';
+    const style = Number.isFinite(v) ? `background:${heatZColor(v)};color:${Math.abs(v) > .8 ? '#fff' : '#17324d'}` : '';
+    return `<td style="${style}" title="${esc(row.gene)} · ${esc(data.groups.find(g=>g.key===cell.group)?.label || cell.group)} · z=${label} · n=${cell.n}">${label}</td>`;
+  }).join('')}</tr>`).join('');
+
+  host.innerHTML = `
+    <div class="demographic-heatmap-scroll">
+      <table class="demographic-heatmap-table">
+        <thead><tr><th>Gene</th>${head}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="demographic-heatmap-legend" aria-label="Escala de z-score">
+      <span>−2</span><div class="demographic-heatmap-gradient"></div><span>0</span><div class="demographic-heatmap-gradient positive"></div><span>+2</span>
+      <small>Expressão média padronizada (z-score)</small>
+    </div>`;
+  report.innerHTML = demographicHeatmapReport(data);
+  return true;
+}
+
+function heatZColor(value) {
+  const v = Math.max(-2, Math.min(2, Number(value) || 0));
+  const white = [247,247,247], blue=[33,102,172], red=[214,96,77];
+  const target = v < 0 ? blue : red;
+  const t = Math.abs(v) / 2;
+  const rgb = white.map((x,i)=>Math.round(x + (target[i]-x)*t));
+  return `rgb(${rgb.join(',')})`;
 }
 
 function degCard() {
   if (dp.pack.scope!=='completo') return noDataCard('Top DEGs — Relapse vs None','Bloqueado no modo Expresso: um painel parcial altera o universo de testes e o FDR. Reconstrua o estudo em escopo Completo.');
   if (!analytics.topDEGs?.length) return noDataCard('Top DEGs — Relapse vs None','Dados insuficientes para DEA significativa nesta coorte.');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">Relapse ${analytics.dea.n1||0} vs None ${analytics.dea.n0||0}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Top DEGs — Relapse vs None</div><div class="card__subtitle">DEA local aproximada em log2(expressão+1). O resultado só recebe selo R após comparação com a tabela limma corrigida.</div><div class="single-result-canvas"><canvas id="result-degs"></canvas></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">Relapse ${analytics.dea.n1||0} vs None ${analytics.dea.n0||0}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Top DEGs — Relapse vs None</div><div class="card__subtitle">DEA local aproximada em log2(expressão+1). O resultado só recebe selo R após comparação com a tabela limma corrigida.</div><div class="single-result-canvas"><canvas id="result-degs"></canvas></div>${degGraphReport()}</div>`;
 }
 
 function volcanoCard() {
   if (dp.pack.scope!=='completo') return noDataCard('Volcano Plot','Bloqueado no modo Expresso: o painel parcial não reproduz o universo transcriptômico usado pelo R e altera o FDR.');
   if (!(analytics.dea?.table||[]).length) return noDataCard('Volcano Plot','DEA não disponível nesta coorte.');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(dp.pack.expressionTransform?.label||'escala não informada')}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Volcano Plot — Relapse vs None</div><div class="card__subtitle">FDR &lt; 0,05 e |log2FC| &gt; 0,5. Esta é uma reprodução exploratória local; para equivalência científica, compare com a saída do Script.R corrigido (limma-trend).</div><div class="single-result-canvas"><canvas id="result-volcano"></canvas></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(dp.pack.expressionTransform?.label||'escala não informada')}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Volcano Plot — Relapse vs None</div><div class="card__subtitle">FDR &lt; 0,05 e |log2FC| &gt; 0,5. Esta é uma reprodução exploratória local; para equivalência científica, compare com a saída do Script.R corrigido (limma-trend).</div><div class="single-result-canvas"><canvas id="result-volcano"></canvas></div>${volcanoGraphReport()}</div>`;
 }
 
 function coxCard(genes) {
@@ -285,7 +448,7 @@ function coxCard(genes) {
   const available = ctx.genes;
   const v=ctx.v;
   if (!available.length || !v.endpointAdequate) return noDataCard('Forest Plot — Cox univariado','Endpoint/expressão insuficientes: são necessários pelo menos 20 registros válidos e 5 eventos, além de expressão para o(s) gene(s) selecionado(s).');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Somente os genes escolhidos. HR por +1 DP de expressão; no modo Compatibilidade R a escala segue o RPKM bruto do Script.R antes da padronização; IC95% e p são locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução. O teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-meta" class="mt-4"></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Somente os genes escolhidos. HR por +1 DP de expressão; no modo Compatibilidade R a escala segue o RPKM bruto do Script.R antes da padronização; IC95% e p são locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução. O teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div></div>`;
 }
 
 function kmCard(gene) {
@@ -293,7 +456,7 @@ function kmCard(gene) {
   const row = ctx.rows[gene];
   const v = ctx.v;
   if (!row || !v.endpointAdequate) return noDataCard(`Kaplan-Meier — ${gene}`,`${gene} não possui expressão alinhada com um endpoint adequado (mínimo 20 registros e 5 eventos) no estudo ativo.`);
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(v.endpointLabel||'sobrevida')}</span><span class="study-pill">${esc(v.endpointTimeColumn||'tempo?')}</span><span class="study-pill">gene ${esc(gene)}</span>`)}<div class="card__title">Kaplan-Meier — ${esc(gene)}</div><div class="card__subtitle">Grupos Alto/Baixo definidos pela mediana de expressão na coorte do modo escolhido. A faixa translúcida representa o IC95% log-log/Greenwood. Curva de grupos de referência, não previsão individual.</div><div class="single-result-canvas"><canvas id="result-km-${safeId(gene)}"></canvas></div><div class="card__subtitle mt-4"><strong>Log-rank — eventos observados × esperados</strong></div><div class="single-result-canvas" style="min-height:260px"><canvas id="result-km-oe-${safeId(gene)}"></canvas></div><div id="km-meta-${safeId(gene)}" class="mt-3"></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(v.endpointLabel||'sobrevida')}</span><span class="study-pill">${esc(v.endpointTimeColumn||'tempo?')}</span><span class="study-pill">gene ${esc(gene)}</span>`)}<div class="card__title">Kaplan-Meier — ${esc(gene)}</div><div class="card__subtitle">Grupos Alto/Baixo definidos pela mediana de expressão na coorte do modo escolhido. A faixa translúcida representa o IC95% log-log/Greenwood. Curva de grupos de referência, não previsão individual.</div><div class="single-result-canvas"><canvas id="result-km-${safeId(gene)}"></canvas></div><div class="card__subtitle mt-4"><strong>Log-rank — eventos observados × esperados</strong></div><div class="single-result-canvas" style="min-height:260px"><canvas id="result-km-oe-${safeId(gene)}"></canvas></div><div id="km-graph-report-${safeId(gene)}"></div><div id="km-meta-${safeId(gene)}" class="mt-3"></div></div>`;
 }
 
 function noDataCard(title, note) {
@@ -401,6 +564,8 @@ function drawCox(genes) {
   const q=bhFdr(d.map(r=>r.p_value)); d.forEach((r,i)=>r.q_value=q[i]); d=d.sort((a,b)=>a.HR-b.HR);
   const points=d.map((r,i)=>({x:r.HR,y:i,gene:r.Gene,lo:r.HR_lower,hi:r.HR_upper,p:r.p_value,q:r.q_value,n:r.n,events:r.nEvents})),t=getChartTheme();
   charts.push(new Chart(el,{type:'scatter',data:{datasets:[{data:points,backgroundColor:points.map(p=>p.q<.05?(p.x>1?'#e74c3c':'#2e7ff0'):'#8590a8'),pointRadius:7}]},options:{responsive:true,maintainAspectRatio:false,parsing:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.raw.gene}: HR=${c.raw.x.toFixed(3)} · IC95% ${c.raw.lo.toFixed(3)}–${c.raw.hi.toFixed(3)}`,afterLabel:c=>`p=${fmtP(c.raw.p)} · FDR=${fmtP(c.raw.q)} · eventos=${c.raw.events}/${c.raw.n}`}}},scales:{x:{type:'logarithmic',min:Math.max(.05,Math.min(...points.map(p=>p.lo))*.8),max:Math.max(2,Math.max(...points.map(p=>p.hi))*1.2),ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'Hazard Ratio (escala log)',color:t.text}},y:{min:-1,max:d.length,ticks:{color:t.text,callback:v=>Number.isInteger(v)&&d[v]?d[v].Gene:''},grid:{display:false}}}},plugins:[forestCIPlugin()]}));
+  const coxReport=document.getElementById('cox-graph-report');
+  if(coxReport) coxReport.innerHTML=coxGraphReport(d);
   const meta=document.getElementById('cox-meta');
   if(meta){
     const requested=new Set(genes);
@@ -482,6 +647,8 @@ function drawKM(gene) {
   const riskTimes=niceRiskTimes(maxTime);
   const riskRows=s.km.map(g=>({name:g.name,vals:atRiskAt(g,riskTimes)}));
   const riskTable=`<div class="km-risk-wrap"><strong>Número em risco</strong><div class="table-wrap"><table class="data-table km-risk-table"><thead><tr><th>Grupo</th>${riskTimes.map(x=>`<th>${fmtTime(x)} m</th>`).join('')}</tr></thead><tbody>${riskRows.map(r=>`<tr><td>${esc(r.name)}</td>${r.vals.map(n=>`<td>${n}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+  const kmReport=document.getElementById(`km-graph-report-${safeId(gene)}`);
+  if(kmReport) kmReport.innerHTML=kmGraphReport(gene,s);
   const meta=document.getElementById(`km-meta-${safeId(gene)}`);
   if(meta){
     meta.innerHTML=`<div class="validation-strip"><div><span>Gene</span><strong>${esc(gene)}</strong></div><div><span>Corte de expressão</span><strong>mediana = ${Number(s.medianCut).toFixed(4)}</strong></div><div><span>Grupos</span><strong>Alto n=${s.nAlto} · Baixo n=${s.nBaixo}</strong></div><div><span>Log-rank</span><strong>χ²=${Number(s.logRank?.chi2||0).toFixed(4)} · p=${fmtP(s.logRank?.p)}</strong></div><div><span>Endpoint</span><strong>${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'—')}</strong></div><div><span>Modo</span><strong>${esc(x.modeLabel||'Basal por paciente')}</strong></div><div><span>Eventos</span><strong>${s.events}/${s.n}</strong></div></div>${riskTable}<div class="flex gap-2 mt-3" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="km-json-${safeId(gene)}"><i class="fa-solid fa-file-code"></i> Baixar dados KM em JSON</button></div><p class="chart-note mt-3">IC95%: transformação log-log com variância de Greenwood. O gráfico observado × esperado usa exatamente as quantidades do mesmo teste log-rank. KM e Cox usam o mesmo conjunto de casos completos por gene (OS + expressão). No modo Compatibilidade R, ausências de expressão são imputadas pela mediana do gene antes do filtro de OS, reproduzindo a ordem do Script.R. O selo “validado contra R” só é permitido depois da comparação numérica com a saída R correspondente.</p>`;
