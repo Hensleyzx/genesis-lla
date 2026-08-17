@@ -90,6 +90,35 @@ export function warningBanner() {
   return `<div class="academic-warning"><i class="fa-solid fa-triangle-exclamation"></i><p><strong>Aviso:</strong> ${PROJECT_INFO.warning}</p></div>`;
 }
 
+
+function graphReportEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+}
+
+export function graphReport({
+  title = 'Mini-laudo do gráfico',
+  what = '',
+  finding = '',
+  caution = 'Interpretação acadêmica/exploratória; não substitui laudo, diagnóstico ou decisão clínica.',
+  source = 'GENESIS',
+} = {}) {
+  const row = (icon, label, text) => text ? `
+    <div class="graph-report__row">
+      <i class="fa-solid ${icon}"></i>
+      <div><span>${graphReportEscape(label)}</span><p>${graphReportEscape(text)}</p></div>
+    </div>` : '';
+  return `
+    <aside class="graph-report" aria-label="${graphReportEscape(title)}">
+      <div class="graph-report__head">
+        <div><i class="fa-solid fa-file-waveform"></i><strong>${graphReportEscape(title)}</strong></div>
+        <span>${graphReportEscape(source)}</span>
+      </div>
+      ${row('fa-circle-info', 'O que é', what)}
+      ${row('fa-magnifying-glass-chart', 'Leitura deste resultado', finding)}
+      ${row('fa-shield-heart', 'Limite', caution)}
+    </aside>`;
+}
+
 export function injectFontAwesome() {
   if (document.querySelector('link[data-fa]')) return;
   const link = document.createElement('link');

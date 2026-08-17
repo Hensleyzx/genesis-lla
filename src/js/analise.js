@@ -1,5 +1,5 @@
 import '../css/genesis.css';
-import { mountLayout, injectFontAwesome, warningBanner, getChartTheme } from './common.js';
+import { mountLayout, injectFontAwesome, warningBanner, getChartTheme, graphReport } from './common.js';
 import { GENES, adicionarAnalise, salvarAnaliseAtual, gerarRelatorioTexto } from './data.js';
 import { analyzePatient } from './analysis-engine.js';
 import { listLoadedStudyMeta, getActiveStudyId } from './datapack.js';
@@ -369,6 +369,21 @@ function signalLabel(ev){
 }
 function qualityClass(score){return score>=80?'high':score>=60?'mid':'low';}
 
+
+function patientMatchedGraphReport(studyResult) {
+  const m = studyResult?.matched;
+  if (!m?.available) return '';
+  const groups = m.groups || [];
+  const similar = groups.find(g => String(g.name).toLowerCase().includes('semelh'));
+  const rest = groups.find(g => !String(g.name).toLowerCase().includes('semelh'));
+  return graphReport({
+    what: 'Curva Kaplan–Meier descritiva que compara a Sobrevida Global observada no grupo de perfis mais semelhantes ao caso com os demais pacientes da mesma coorte.',
+    finding: `O pareamento formou ${m.nMatched} perfil(is) semelhante(s), com ${m.nEvents} evento(s) de OS e similaridade mediana ${nfmt(m.medianSimilarity,1)}/100.${similar && rest ? ` As curvas exibidas correspondem a ${similar.name} (n=${similar.n}) e ${rest.name} (n=${rest.n}).` : ''}`,
+    caution: 'O pareamento é heurístico e não validado clinicamente. A curva pertence aos grupos de referência e não deve ser convertida em probabilidade individual de sobrevivência, diagnóstico ou recomendação terapêutica.',
+    source: 'Análise do paciente · exploratória',
+  });
+}
+
 function renderResult(r){
   destroyCharts();
   const host=document.getElementById('patient-analysis-output');
@@ -389,7 +404,7 @@ function renderResult(r){
     const m=s.matched;
     return `<article class="matched-study-card">
       <div class="matched-study-card__head"><div><span>COORTE ${i+1}</span><h3>${esc(s.studyName)}</h3><small>${esc(s.studyId)}</small></div><span class="quality-badge ${qualityClass(s.dataQuality?.score||0)}">${esc(s.dataQuality?.label||'—')} · ${s.dataQuality?.score||0}/100</span></div>
-      ${m?.available?`<div class="matched-summary"><div><span>Perfis semelhantes</span><strong>${m.nMatched}</strong></div><div><span>Eventos</span><strong>${m.nEvents}</strong></div><div><span>Similaridade mediana</span><strong>${nfmt(m.medianSimilarity,1)}/100</strong></div><div><span>Força</span><strong>${esc(m.strength)}</strong></div></div><div class="chart-wrap patient-result-km"><canvas id="patient-km-${i}"></canvas></div><p class="chart-note">${esc(m.note||'')}</p>`:`<div class="empty-science compact">${esc(m?.reason||'Não foi possível formar grupo de perfis semelhantes nesta coorte.')}</div>`}
+      ${m?.available?`<div class="matched-summary"><div><span>Perfis semelhantes</span><strong>${m.nMatched}</strong></div><div><span>Eventos</span><strong>${m.nEvents}</strong></div><div><span>Similaridade mediana</span><strong>${nfmt(m.medianSimilarity,1)}/100</strong></div><div><span>Força</span><strong>${esc(m.strength)}</strong></div></div><div class="chart-wrap patient-result-km"><canvas id="patient-km-${i}"></canvas></div>${patientMatchedGraphReport(s)}<p class="chart-note">${esc(m.note||'')}</p>`:`<div class="empty-science compact">${esc(m?.reason||'Não foi possível formar grupo de perfis semelhantes nesta coorte.')}</div>`}
     </article>`;
   }).join('');
 

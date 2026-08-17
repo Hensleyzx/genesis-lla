@@ -1,5 +1,5 @@
 import '../css/genesis.css';
-import { mountLayout, injectFontAwesome, warningBanner, getChartTheme } from './common.js';
+import { mountLayout, injectFontAwesome, warningBanner, getChartTheme, graphReport } from './common.js';
 import Chart from 'chart.js/auto';
 import Papa from 'papaparse';
 
@@ -117,6 +117,79 @@ function validateStudy(d) {
   if (!nras || Number(nras.n_amostras) !== 16 || Number(nras.freq_relativa) !== 10.7) throw new Error('Referência NRAS divergente do arquivo R.');
 }
 
+
+function rTop30GraphReport() {
+  const rows = [...(study?.top30 || [])].sort((a,b) => Number(b.freq_relativa) - Number(a.freq_relativa));
+  const first = rows[0], second = rows[1];
+  const finding = first
+    ? `${first.Gene} foi o gene mais frequente (${pct(first.freq_relativa)}; ${first.n_amostras}/150 amostras)${second ? `, seguido de ${second.Gene} (${pct(second.freq_relativa)}; ${second.n_amostras}/150)` : ''}.`
+    : 'Não foi possível resumir o ranking.';
+  return graphReport({
+    what: 'Ranking das alterações/mutações observadas nas 150 amostras perfiladas do TARGET ALL. Quanto maior a barra, maior a proporção de amostras com alteração naquele gene.',
+    finding,
+    caution: 'A frequência descreve esta coorte e não equivale a risco individual, agressividade isolada do gene ou valor clínico normal.',
+    source: 'GENESIS-R · dados do R',
+  });
+}
+
+function rDeaGraphReport(summary) {
+  const ranked = [...(study?.dea || [])]
+    .filter(r => Number.isFinite(Number(r['adj.P.Val'])) && Number.isFinite(Number(r.logFC)))
+    .sort((a,b) => Number(a['adj.P.Val']) - Number(b['adj.P.Val']));
+  const lead = ranked[0];
+  const direction = lead ? (Number(lead.logFC) > 0 ? 'maior expressão no grupo Relapse' : Number(lead.logFC) < 0 ? 'menor expressão no grupo Relapse' : 'sem direção de fold change') : '';
+  return graphReport({
+    what: 'Volcano Plot da expressão diferencial Relapse vs None. O eixo X mostra log2 fold change e o eixo Y mostra a significância ajustada por múltiplos testes.',
+    finding: `${Number(summary.classified).toLocaleString('pt-BR')} genes foram classificados como DEGs pelo critério completo do R (${Number(summary.up).toLocaleString('pt-BR')} up e ${Number(summary.down).toLocaleString('pt-BR')} down). ${Number(summary.fdr05).toLocaleString('pt-BR')} tiveram FDR < 0,05 antes do corte de |logFC|.${lead ? ` O menor adj.P.Val foi de ${lead.gene}, com ${direction}.` : ''}`,
+    caution: 'Expressão diferencial indica associação entre grupos da coorte. Não demonstra causalidade, não diagnostica recaída e deve ser interpretada junto ao tamanho do efeito e ao desenho do estudo.',
+    source: 'GENESIS-R · DEA do R',
+  });
+}
+
+function rCoxUniGraphReport() {
+  const rows = [...(study?.coxUni || [])];
+  const sig = rows.filter(r => Number(r.p_value) < .05);
+  const best = [...rows].sort((a,b) => Number(a.p_value) - Number(b.p_value))[0];
+  const finding = `${sig.length} de ${rows.length} genes apresentaram p < 0,05 no modelo univariado.${best ? ` O menor p foi de ${best.Gene} (HR ${num(best.HR,3)}; IC95% ${num(best.HR_lower,3)}–${num(best.HR_upper,3)}; p=${fmtP(best.p_value)}).` : ''}`;
+  return graphReport({
+    what: 'Forest Plot do Cox univariado. HR = 1 indica ausência de associação com o hazard; HR abaixo de 1 indica associação com menor hazard e HR acima de 1 com maior hazard, neste modelo.',
+    finding,
+    caution: 'É associação univariada, sem ajuste simultâneo por outros fatores. p < 0,05 não prova efeito causal nem permite previsão individual de sobrevivência.',
+    source: 'GENESIS-R · Cox do R',
+  });
+}
+
+function rCoxMultiGraphReport() {
+  const rows = [...(study?.coxMulti || [])];
+  const sig = rows.filter(r => Number(r.p_value) < .05);
+  const best = [...rows].sort((a,b) => Number(a.p_value) - Number(b.p_value))[0];
+  return graphReport({
+    what: 'Cox multivariado: estima a associação de cada gene com o hazard enquanto os demais genes presentes no modelo são considerados simultaneamente.',
+    finding: `${sig.length} de ${rows.length} genes mantiveram p < 0,05 no modelo conjunto.${best ? ` O menor p foi de ${best.Gene} (HR ${num(best.HR,3)}; p=${fmtP(best.p_value)}).` : ''}`,
+    caution: 'O CSV recebido não contém IC95% desta etapa. O resultado depende das variáveis incluídas, do tamanho da amostra e das premissas do modelo de Cox.',
+    source: 'GENESIS-R · Cox multivariado do R',
+  });
+}
+
+function rKmGraphReport(gene, result) {
+  if (!result) return graphReport({
+    what: 'Curva Kaplan–Meier de Sobrevida Global (OS), comparando grupos de expressão alta e baixa definidos pela mediana.',
+    finding: `Não há metadados resumidos disponíveis para ${gene}.`,
+    caution: 'A curva descreve grupos da coorte e não uma probabilidade individual.',
+    source: 'GENESIS-R · Kaplan–Meier do R',
+  });
+  const p = Number(result.p);
+  const significance = p < .05
+    ? `O teste log-rank apresentou p=${fmtP(p)}, indicando diferença estatisticamente detectável entre as curvas nesta análise.`
+    : `O teste log-rank apresentou p=${fmtP(p)}; nesta análise não houve evidência estatística suficiente de diferença entre as curvas pelo limiar de 0,05.`;
+  return graphReport({
+    what: `Kaplan–Meier de OS para ${gene}. A curva compara expressão Alta (n=${result.high_n}) e Baixa (n=${result.low_n}); marcas na curva indicam censura e a faixa representa incerteza.`,
+    finding: significance,
+    caution: 'A direção e a magnitude devem ser lidas nas curvas e no contexto do modelo. O gráfico compara grupos e não estima sobrevivência individual nem estabelece causalidade.',
+    source: 'GENESIS-R · saída R',
+  });
+}
+
 function renderStudy() {
   destroyCharts();
   const m = study.manifest;
@@ -153,6 +226,7 @@ function renderStudy() {
   <section class="card mt-6 genesis-r-section" id="gr-top30">
     ${sectionHeader('01', 'Top 30 Genes Mais Mutados/Alterados', 'Frequência mutacional calculada no R com denominador n=150.', 'VALIDADO NO R')}
     <div class="genesis-r-chart-large mt-4"><canvas id="gr-top30-chart"></canvas></div>
+    ${rTop30GraphReport()}
     <div class="flex gap-2 mt-4" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="gr-top30-image"><i class="fa-solid fa-image"></i> Comparar com figura R</button></div>
     <div class="r-reference-box mt-4" id="gr-top30-original" hidden><img src="${BASE}top30_R_original.jpeg" alt="Top 30 original produzido no R"></div>
     <div class="table-wrap mt-4"><table class="data-table">${top30Table()}</table></div>
@@ -174,6 +248,7 @@ function renderStudy() {
       embora <strong>${Number(deaSummary.fdr05).toLocaleString('pt-BR')}</strong> tenham FDR &lt; 0,05 isoladamente.
     </div>
     <div class="genesis-r-volcano mt-4"><canvas id="gr-volcano-chart"></canvas></div>
+    ${rDeaGraphReport(deaSummary)}
     <p class="chart-note mt-3">Cada ponto vem de DEA_results_relapse_vs_none.csv. As linhas tracejadas reproduzem os cortes do script R (logFC = ±0,5 e adj.P.Val = 0,05). Os 20 DEGs com menor adj.P.Val são identificados no gráfico. A escala X usa o intervalo completo observado no CSV, sem ocultar outliers.</p>
     <div class="table-wrap mt-4"><table class="data-table">${deaTable()}</table></div>
   </section>
@@ -181,6 +256,7 @@ function renderStudy() {
   <section class="card mt-6 genesis-r-section" id="gr-cox">
     ${sectionHeader('03', 'Cox univariado', 'HR, IC95% e p-value lidos diretamente de cox_univariado.csv.', 'DADOS DO R')}
     <div class="genesis-r-chart-forest mt-4"><canvas id="gr-cox-uni-chart"></canvas></div>
+    ${rCoxUniGraphReport()}
     <div class="flex gap-2 mt-4" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="gr-cox-image"><i class="fa-solid fa-image"></i> Comparar com Forest Plot R</button></div>
     <div class="r-reference-box mt-4" id="gr-cox-original" hidden><img src="${BASE}forest_cox_R_original.jpeg" alt="Forest Plot original produzido no R"></div>
     <div class="table-wrap mt-4"><table class="data-table">${coxUniTable()}</table></div>
@@ -189,6 +265,7 @@ function renderStudy() {
   <section class="card mt-6 genesis-r-section" id="gr-cox-multi">
     ${sectionHeader('04', 'Cox multivariado', 'Modelo conjunto exportado pelo R; esta tabela não possui IC95% no CSV recebido.', 'DADOS DO R')}
     <div class="genesis-r-chart-medium mt-4"><canvas id="gr-cox-multi-chart"></canvas></div>
+    ${rCoxMultiGraphReport()}
     <div class="table-wrap mt-4"><table class="data-table">${coxMultiTable()}</table></div>
   </section>
 
@@ -199,6 +276,7 @@ function renderStudy() {
       <div id="gr-km-meta" class="km-study-meta"></div>
     </div>
     <div class="genesis-r-km-frame mt-4"><img id="gr-km-image" alt="Curva Kaplan-Meier produzida no R"></div>
+    <div id="gr-km-report"></div>
     <p class="chart-note mt-3">As imagens exibem IC95%, marcas de censura, p do log-rank e tabela de pacientes em risco. Como o CSV ponto a ponto das curvas não foi fornecido, o GENESIS-R não redesenha estas curvas.</p>
   </section>
 
@@ -466,6 +544,8 @@ function renderKm() {
   document.getElementById('gr-km-image').src = `${BASE}km/${encodeURIComponent(gene)}.jpeg`;
   document.getElementById('gr-km-image').alt = `Kaplan-Meier ${gene} produzido no R`;
   document.getElementById('gr-km-meta').innerHTML = r ? `<span class="quality-badge ${Number(r.p)<.05?'high':'mid'}">p = ${fmtP(r.p)}</span><span class="study-pill">Alto n=${r.high_n}</span><span class="study-pill">Baixo n=${r.low_n}</span>` : '';
+  const report = document.getElementById('gr-km-report');
+  if (report) report.innerHTML = rKmGraphReport(gene, r);
 }
 
 function summarizeDea(rows) {
