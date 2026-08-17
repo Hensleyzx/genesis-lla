@@ -1,0 +1,81 @@
+{
+  "id": "genesis-r-target-all",
+  "name": "GENESIS-R — Estudo de Validação TARGET ALL",
+  "study_id": "all_phase2_target_2018_pub",
+  "dataset": "TARGET ALL",
+  "source": "Pipeline R fornecido pelo orientador",
+  "mutation_denominator": 150,
+  "top30_rows": 30,
+  "clinical_rows": 1127,
+  "clinical_columns": 53,
+  "unique_patients": 755,
+  "dea_rows": 23405,
+  "cox_univariate_rows": 10,
+  "cox_multivariate_rows": 9,
+  "km_genes": [
+    "FRMD4A",
+    "TMEM87B",
+    "STAT2",
+    "SMCHD1",
+    "DAPK1",
+    "MIR221",
+    "SERPINF2",
+    "EPM2AIP1",
+    "NKIRAS1",
+    "C9orf72"
+  ],
+  "endpoint": "OS (Sobrevida Global)",
+  "note": "Resultados pré-processados/gerados no R; o modo GENESIS-R apresenta os arquivos fornecidos e não os rotula como cálculo clínico individual.",
+  "km_results": {
+    "FRMD4A": {
+      "p": 0.5,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "TMEM87B": {
+      "p": 0.77,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "STAT2": {
+      "p": 0.038,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "SMCHD1": {
+      "p": 0.21,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "DAPK1": {
+      "p": 0.0064,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "MIR221": {
+      "p": 0.0078,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "SERPINF2": {
+      "p": 0.042,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "EPM2AIP1": {
+      "p": 0.00081,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "NKIRAS1": {
+      "p": 0.37,
+      "high_n": 46,
+      "low_n": 46
+    },
+    "C9orf72": {
+      "p": 0.0072,
+      "high_n": 46,
+      "low_n": 46
+    }
+  }
+}

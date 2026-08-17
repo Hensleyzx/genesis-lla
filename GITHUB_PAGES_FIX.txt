@@ -1,0 +1,11 @@
+GENESIS V10.3 — GitHub Pages
+
+Publicação esperada:
+- vite.config.ts calcula automaticamente o base a partir de GITHUB_REPOSITORY no GitHub Actions.
+- Para repositório de projeto, o resultado é /NOME-REAL-DO-REPOSITORIO/.
+- Para username.github.io, o base é /.
+- VITE_BASE_PATH pode sobrescrever o caminho quando necessário.
+- .github/workflows/deploy-pages.yml executa npm ci, npm run test:science e npm run build.
+- Em Settings > Pages, use Source = GitHub Actions.
+
+A página publicada deve usar os arquivos compilados da pasta dist, não o código-fonte Vite cru.
