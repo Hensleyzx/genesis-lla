@@ -136,8 +136,8 @@ function renderWorkspace(top10) {
     <div class="graph-choice-grid mt-4">
       ${graphChoice('top30','Top 30 oficial — referência R','TARGET ALL · n=150 · usa a figura/valores validados pelo professor e pelo pipeline R.')}
       ${graphChoice('selectedmut','Frequência mutacional — genes selecionados','Mostra o valor de referência R quando disponível; fora da referência, identifica explicitamente o valor como exploratório do estudo ativo.')}
-      ${graphChoice('mutheat','Heatmap mutacional basal — Top 30','Oncoprint binário simplificado da seleção basal; não substitui o Top 30 oficial n=150.')}
-      ${graphChoice('demographic','Heatmap demográfico — expressão × sexo/idade','Genes selecionados × quatro grupos de sexo e idade. Usa amostras basais, idade/sexo clínicos e z-score de expressão; a idade é dividida pela mediana da própria coorte.')}
+      ${graphChoice('demographic','Heatmap demográfico — genes × sexo/idade','GRÁFICO PEDIDO PELO PROFESSOR · Genes selecionados × quatro grupos de sexo e idade. Usa amostras basais, idade/sexo clínicos e z-score de expressão; a idade é dividida pela mediana da própria coorte.')}
+      ${graphChoice('mutheat','Oncoprint mutacional basal — Top 30','Matriz binária gene × amostra basal. É um gráfico de mutações e NÃO é o heatmap demográfico solicitado pelo professor.')}
       ${graphChoice('degs','Top DEGs — Relapse vs None', dp.pack.scope==='completo' ? 'DEA exploratória em escopo completo. Ainda não é limma/R validado.' : 'Exige escopo Completo para evitar FDR/DEGs calculados sobre painel parcial.', dp.pack.scope!=='completo')}
       ${graphChoice('volcano','Volcano Plot', dp.pack.scope==='completo' ? 'Usa a mesma DEA exploratória completa; validação final depende da saída R corrigida.' : 'Exige escopo Completo; no modo Expresso faltam genes para reproduzir a análise transcriptômica.', dp.pack.scope!=='completo')}
       ${graphChoice('cox','Forest Plot — Cox univariado','Roda somente os genes selecionados acima; HR por 1 DP de expressão.')}
@@ -185,7 +185,8 @@ function generateGeneGraphs() {
   if (!genes.length) return msg('gene-msg','Selecione pelo menos um gene antes de gerar os gráficos.',false);
   const wanted = new Set(['selectedmut','demographic','cox','km']);
   document.querySelectorAll('.result-graph').forEach(el => {
-    if (wanted.has(el.value) && !el.disabled) el.checked = true;
+    if (el.value === 'mutheat') el.checked = false;
+    else if (wanted.has(el.value) && !el.disabled) el.checked = true;
   });
   renderGeneratedGraphs(false);
   setTimeout(() => document.getElementById('generated-results')?.scrollIntoView({ behavior:'smooth', block:'start' }), 0);
@@ -219,8 +220,8 @@ async function renderGeneratedGraphs(redrawOnly = false) {
   for (const type of selectedGraphs) {
     if (type === 'top30') cards.push(top30Card());
     if (type === 'selectedmut') cards.push(selectedMutationCard(genes));
-    if (type === 'mutheat') cards.push(mutationHeatmapCard());
     if (type === 'demographic') cards.push(demographicHeatmapCard(genes));
+    if (type === 'mutheat') cards.push(mutationHeatmapCard());
     if (type === 'degs') cards.push(degCard());
     if (type === 'volcano') cards.push(volcanoCard());
     if (type === 'cox') cards.push(coxCard(genes));
@@ -232,8 +233,8 @@ async function renderGeneratedGraphs(redrawOnly = false) {
   const rendered = [];
   if (selectedGraphs.includes('top30') && drawTop30()) rendered.push({title:'Top 30 oficial — referência R', genes:[], status:'validado contra R'});
   if (selectedGraphs.includes('selectedmut') && drawSelectedMutation(genes)) rendered.push({title:'Frequência mutacional — genes selecionados', genes, status:allGenesHaveRReference(genes)?'referência R':'misto: referência R + exploratório'});
-  if (selectedGraphs.includes('mutheat') && drawMutationHeatmap()) rendered.push({title:'Heatmap mutacional basal — Top 30', genes:[]});
-  if (selectedGraphs.includes('demographic') && drawDemographicHeatmap(genes)) rendered.push({title:'Heatmap demográfico — expressão × sexo/idade', genes});
+  if (selectedGraphs.includes('demographic') && drawDemographicHeatmap(genes)) rendered.push({title:'Heatmap demográfico — genes × sexo/idade', genes});
+  if (selectedGraphs.includes('mutheat') && drawMutationHeatmap()) rendered.push({title:'Oncoprint mutacional basal — Top 30', genes:[]});
   if (selectedGraphs.includes('degs') && drawDEGs()) rendered.push({title:'Top DEGs — Relapse vs None', genes:[]});
   if (selectedGraphs.includes('volcano') && drawVolcano()) rendered.push({title:'Volcano Plot — Relapse vs None', genes:[]});
   if (selectedGraphs.includes('cox') && drawCox(genes)) rendered.push({title:'Forest Plot — Cox univariado', genes});
@@ -284,7 +285,7 @@ function mutationHeatmapGraphReport() {
   const first = genes[0];
   const n = dp?.pack?.mutationSelection?.sampleIds?.length || 0;
   return graphReport({
-    what: 'Mapa binário de alterações na seleção basal: cada linha é um gene, cada coluna é uma amostra e cada célula preenchida indica alteração detectada.',
+    what: 'Oncoprint binário de alterações na seleção basal: cada linha é um gene, cada coluna é uma amostra e cada célula preenchida indica alteração detectada. Este não é o heatmap demográfico de expressão.',
     finding: `${n} amostras basais compõem este universo.${first ? ` Entre os genes exibidos, ${first.symbol} teve a maior frequência basal (${Number(first.frequency).toFixed(1)}%).` : ''}`,
     caution: 'Este heatmap usa a coorte basal deduplicada e, por isso, não deve ser confundido com o Top 30 oficial de n=150.',
     source: 'Exploratório local · basal',
@@ -357,17 +358,17 @@ function selectedMutationCard(genes) {
 
 function mutationHeatmapCard() {
   const basalGenes=Object.values(dp.mut?.basal?.byGene||{});
-  if (!basalGenes.length || !(dp.pack?.mutationSelection?.sampleIds||[]).length) return noDataCard('Heatmap mutacional basal — Top 30','Matriz mutacional basal não disponível.');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${dp.pack.mutationSelection.sampleIds.length} amostras basais</span>`)}<div class="card__title">Heatmap mutacional basal — Top 30 genes</div><div class="card__subtitle">Esta visualização usa somente a seleção basal por paciente e é deliberadamente separada do Top 30 oficial n=150. Linhas = genes; colunas = amostras basais; célula preenchida = alteração detectada.</div><div class="mutation-heatmap-scroll mt-4"><canvas id="result-mutheat"></canvas></div>${mutationHeatmapGraphReport()}</div>`;
+  if (!basalGenes.length || !(dp.pack?.mutationSelection?.sampleIds||[]).length) return noDataCard('Oncoprint mutacional basal — Top 30','Matriz mutacional basal não disponível.');
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${dp.pack.mutationSelection.sampleIds.length} amostras basais</span><span class="study-pill">NÃO É O HEATMAP DEMOGRÁFICO</span>`)}<div class="card__title">Oncoprint mutacional basal — Top 30 genes</div><div class="card__subtitle">Matriz de mutações da seleção basal. Linhas = genes; colunas = amostras; célula preenchida = alteração detectada. Este gráfico permanece como análise mutacional e não corresponde ao heatmap de sexo/idade solicitado pelo professor.</div><div class="mutation-heatmap-scroll mt-4"><canvas id="result-mutheat"></canvas></div>${mutationHeatmapGraphReport()}</div>`;
 }
 
 
 function demographicHeatmapCard(genes) {
   const data = buildDemographicHeatmap(dp, genes, { maxGenes:20, minGroupN:5 });
-  if (!data.available) return noDataCard('Heatmap demográfico — expressão × sexo/idade', data.reason || 'Dados demográficos e de expressão insuficientes.');
+  if (!data.available) return noDataCard('Heatmap demográfico — genes × sexo/idade', data.reason || 'Dados demográficos e de expressão insuficientes.');
   const groupPills = data.groups.map(g => `<span class="study-pill">${esc(g.label)} · n=${g.n}</span>`).join('');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">basal por paciente</span><span class="study-pill">corte etário: mediana ${esc(data.cutoffLabel)} anos</span>`)}
-    <div class="card__title">Heatmap demográfico — expressão × sexo/idade</div>
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">PEDIDO DO PROFESSOR</span><span class="study-pill">basal por paciente</span><span class="study-pill">corte etário: mediana ${esc(data.cutoffLabel)} anos</span>`)}
+    <div class="card__title">Heatmap demográfico — genes × sexo/idade</div>
     <div class="card__subtitle">Expressão média padronizada (z-score) dos genes selecionados em quatro grupos demográficos. O corte etário é a mediana da própria coorte elegível, usado apenas para visualização e <strong>não</strong> como limiar clínico.</div>
     <div class="demographic-group-pills mt-3">${groupPills}</div>
     <div id="result-demographic-heatmap" class="demographic-heatmap-wrap mt-4"></div>

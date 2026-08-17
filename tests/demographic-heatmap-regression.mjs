@@ -74,7 +74,7 @@ assert(/\bAGE_IN_DAYS\b/.test(header), 'clinical_data.csv deve conter AGE_IN_DAY
 const ui = fs.readFileSync(new URL('../src/js/resultados.js', import.meta.url), 'utf8');
 assert(ui.includes("graphChoice('demographic'"));
 assert(ui.includes('drawDemographicHeatmap(genes)'));
-assert(ui.includes('Heatmap demográfico — expressão × sexo/idade'));
+assert(ui.includes('Heatmap demográfico — genes × sexo/idade'));
 assert(ui.includes("new Set(['selectedmut','demographic','cox','km'])"));
 assert(ui.includes('mediana da própria coorte'));
 assert(ui.includes('não testa significância entre grupos'));
