@@ -1,0 +1,14 @@
+PATCH MÍNIMO GENESIS V10.7
+
+NÃO apague o repositório.
+
+1. Extraia este ZIP.
+2. GitHub > Code > Add file > Upload files.
+3. Arraste todo o conteúdo extraído.
+4. Commit changes.
+5. Confira se index.html e package.json aparecem na raiz.
+6. Settings > Pages > Source = GitHub Actions.
+7. Actions > Deploy GENESIS to GitHub Pages.
+
+Este patch contém apenas os arquivos que faltaram/foram críticos no upload anterior.
+Os arquivos grandes do GENESIS-R e o src/js já estão no repositório atual.

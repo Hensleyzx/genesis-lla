@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b7f83" />
+    <meta name="color-scheme" content="dark light" />
+    <script>try{document.documentElement.dataset.theme=localStorage.getItem('genesis_theme')||'light'}catch(e){}</script>
+    <title>Histórico · GENESIS</title>
+  </head>
+  <body>
+    <div id="boot-fallback" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;background:#f3f8f8;color:#17324d;font-family:Segoe UI,Inter,system-ui,sans-serif;text-align:center">
+      <div style="max-width:620px">
+        <div style="font-size:28px;font-weight:800;letter-spacing:.5px;margin-bottom:10px">GENESIS LLA</div>
+        <div id="boot-status" style="color:#5e7486">Carregando a plataforma…</div>
+      </div>
+    </div>
+    <div id="app"></div>
+    <script>
+      (function () {
+        const showBootError = (message) => {
+          const box = document.getElementById('boot-fallback');
+          const status = document.getElementById('boot-status');
+          if (!box || document.querySelector('.app-shell')) return;
+          box.style.display = 'flex';
+          if (status) status.innerHTML = '<strong style="color:#b42318">Falha ao iniciar esta página.</strong><br><span style="font-size:13px">' + String(message || 'Atualize a página com Ctrl+F5.') + '</span>';
+        };
+        window.addEventListener('error', (event) => {
+          if (!document.querySelector('.app-shell')) showBootError(event.message || 'Um arquivo do site não pôde ser carregado.');
+        });
+        window.addEventListener('unhandledrejection', (event) => {
+          if (!document.querySelector('.app-shell')) showBootError(event.reason?.message || event.reason || 'Erro durante a inicialização.');
+        });
+        setTimeout(() => {
+          if (!document.querySelector('.app-shell')) showBootError('O JavaScript desta página não iniciou. Faça Ctrl+F5 ou abra em uma janela anônima.');
+        }, 5000);
+      })();
+    </script>
+    <script type="module" src="./src/js/dashboard.js"></script>
+  </body>
+</html>

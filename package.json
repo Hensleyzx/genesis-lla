@@ -1,0 +1,43 @@
+{
+  "name": "genesis-lla-v10-7-r-compat",
+  "private": true,
+  "version": "10.7.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test:science": "node tests/scientific-smoke.mjs && node tests/fuzz-invariants.mjs && node tests/r-reference-integrity.mjs && node tests/teacher-request-regression.mjs && node tests/genesis-r-study.mjs && node tests/km-r-compat-regression.mjs",
+    "test:site": "node tests/site-integrity.mjs && node tests/patient-integration.mjs",
+    "test": "npm run test:science && npm run test:site"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "chart.js": "^4.5.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "lucide-react": "^0.446.0",
+    "papaparse": "^5.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.1",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.18",
+    "eslint": "^9.9.1",
+    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint-plugin-react-refresh": "^0.4.11",
+    "globals": "^15.9.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.5.3",
+    "typescript-eslint": "^8.3.0",
+    "vite": "^5.4.2"
+  }
+}
