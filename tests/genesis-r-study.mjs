@@ -51,6 +51,11 @@ const dea = csv('DEA_results_relapse_vs_none.csv');
 assert.equal(dea.length, 23405);
 assert.equal(dea[0].gene, 'C9orf72');
 assert.ok(Number(dea[0]['adj.P.Val']) < 1e-8);
+assert.equal(dea.filter(r => r.color_grp === 'Upregulado').length, 450);
+assert.equal(dea.filter(r => r.color_grp === 'Downregulado').length, 1047);
+assert.equal(dea.filter(r => r.signif !== 'NS').length, 1497);
+assert.equal(dea.filter(r => Number(r['adj.P.Val']) < 0.05).length, 3141);
+assert.ok(Math.min(...dea.map(r => Number(r.logFC)).filter(Number.isFinite)) < -60, 'A escala completa do Volcano deve preservar logFC extremos');
 
 const uni = csv('cox_univariado.csv');
 assert.equal(uni.length, 10);
@@ -76,5 +81,9 @@ assert.match(pageJs, /GENESIS-R — Estudo de Validação TARGET ALL/);
 assert.match(pageJs, /não redesenha estas curvas/i);
 assert.match(pageJs, /cox_univariado\.csv/);
 assert.match(pageJs, /DEA_results_relapse_vs_none\.csv/);
+assert.match(pageJs, /volcanoThresholdPlugin/);
+assert.match(pageJs, /volcanoGeneLabelsPlugin/);
+assert.match(pageJs, /DEGs classificados/);
+assert.match(pageJs, /FDR < 0,05 · sem corte de \|logFC\|/);
 
 console.log('GENESIS-R study integrity: OK');

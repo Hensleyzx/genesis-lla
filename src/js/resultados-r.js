@@ -161,10 +161,20 @@ function renderStudy() {
   <section class="card mt-6 genesis-r-section" id="gr-dea">
     ${sectionHeader('02', 'DEA — Relapse vs None', `${m.dea_rows.toLocaleString('pt-BR')} genes · limma · adj.P.Val disponível no CSV.`, 'DADOS DO R')}
     <div class="genesis-r-kpis mt-4">
-      ${miniMetric(deaSummary.up, 'Upregulados')}${miniMetric(deaSummary.down, 'Downregulados')}${miniMetric(deaSummary.ns, 'Não significativos')}${miniMetric(deaSummary.fdr05, 'adj.P.Val < 0,05')}
+      ${miniMetric(deaSummary.up, 'Upregulados · critério R')}
+      ${miniMetric(deaSummary.down, 'Downregulados · critério R')}
+      ${miniMetric(deaSummary.classified, 'DEGs classificados · critério R')}
+      ${miniMetric(deaSummary.fdr05, 'FDR < 0,05 · sem corte de |logFC|')}
     </div>
-    <div class="genesis-r-chart-large mt-4"><canvas id="gr-volcano-chart"></canvas></div>
-    <p class="chart-note mt-3">Cada ponto vem de DEA_results_relapse_vs_none.csv. O eixo Y usa −log10(adj.P.Val), preservando a correção múltipla já exportada pelo R.</p>
+    <div class="dea-criteria-note mt-3">
+      <strong>Critério do pipeline R:</strong>
+      vermelho/azul = adj.P.Val &lt; 0,05 combinado com |logFC| &gt; 0,5
+      (e classe alta quando adj.P.Val &lt; 0,01 e |logFC| &gt; 1).
+      Por isso <strong>${Number(deaSummary.classified).toLocaleString('pt-BR')}</strong> genes são classificados como DEGs,
+      embora <strong>${Number(deaSummary.fdr05).toLocaleString('pt-BR')}</strong> tenham FDR &lt; 0,05 isoladamente.
+    </div>
+    <div class="genesis-r-volcano mt-4"><canvas id="gr-volcano-chart"></canvas></div>
+    <p class="chart-note mt-3">Cada ponto vem de DEA_results_relapse_vs_none.csv. As linhas tracejadas reproduzem os cortes do script R (logFC = ±0,5 e adj.P.Val = 0,05). Os 20 DEGs com menor adj.P.Val são identificados no gráfico. A escala X usa o intervalo completo observado no CSV, sem ocultar outliers.</p>
     <div class="table-wrap mt-4"><table class="data-table">${deaTable()}</table></div>
   </section>
 
@@ -228,23 +238,198 @@ function drawTop30() {
 }
 
 function drawVolcano() {
-  const t = getChartTheme();
+  // O GENESIS-R não recalcula a DEA: ele só visualiza exatamente as colunas
+  // logFC, adj.P.Val, signif e color_grp exportadas pelo pipeline R.
+  const plotTheme = {
+    text: '#17212b',
+    muted: '#536171',
+    grid: 'rgba(71,85,105,.16)',
+  };
   const groups = { Upregulado: [], Downregulado: [], NS: [] };
+  const all = [];
+
   for (const r of study.dea) {
     const x = Number(r.logFC), p = Number(r['adj.P.Val']);
     if (!Number.isFinite(x) || !Number.isFinite(p) || p <= 0) continue;
+    const point = { x, y: -Math.log10(p), gene: String(r.gene || ''), p, signif: String(r.signif || 'NS') };
     const g = groups[r.color_grp] ? r.color_grp : 'NS';
-    groups[g].push({ x, y: -Math.log10(p), gene: r.gene, p });
+    groups[g].push(point);
+    all.push(point);
   }
+
+  if (!all.length) return;
+
+  const xs = all.map(p => p.x);
+  const ys = all.map(p => p.y);
+  const rawMinX = Math.min(...xs), rawMaxX = Math.max(...xs);
+  const xPad = Math.max(0.5, (rawMaxX - rawMinX) * 0.035);
+  const xMin = rawMinX - xPad;
+  const xMax = rawMaxX + xPad;
+  const yMax = Math.max(2, Math.ceil(Math.max(...ys) + 0.6));
+
+  // Mesmo critério do R:
+  // filter(signif != "NS") |> arrange(adj.P.Val) |> head(20)
+  const labels = all
+    .filter(p => p.signif !== 'NS')
+    .sort((a, b) => a.p - b.p)
+    .slice(0, 20);
+
   charts.push(new Chart(document.getElementById('gr-volcano-chart'), {
-    type:'scatter',
-    data:{ datasets:[
-      {label:'Upregulado',data:groups.Upregulado,pointRadius:2.1,backgroundColor:'#c0392b'},
-      {label:'Downregulado',data:groups.Downregulado,pointRadius:2.1,backgroundColor:'#2980b9'},
-      {label:'NS',data:groups.NS,pointRadius:1.05,backgroundColor:'rgba(127,140,141,.30)'}
+    type: 'scatter',
+    data: { datasets: [
+      // NS primeiro: os pontos significativos ficam por cima, como numa figura científica.
+      { label: 'NS', data: groups.NS, pointRadius: 0.9, pointHoverRadius: 3, backgroundColor: 'rgba(127,140,141,.28)' },
+      { label: 'Downregulado', data: groups.Downregulado, pointRadius: 2.15, pointHoverRadius: 4, backgroundColor: '#2980b9' },
+      { label: 'Upregulado', data: groups.Upregulado, pointRadius: 2.15, pointHoverRadius: 4, backgroundColor: '#c0392b' },
     ]},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,plugins:{legend:{labels:{color:t.text}},tooltip:{callbacks:{label:c=>`${c.raw.gene}: logFC ${num(c.raw.x,3)} · FDR ${sci(c.raw.p)}`}}},scales:{x:{title:{display:true,text:'log2 Fold Change',color:t.text},ticks:{color:t.muted},grid:{color:t.grid}},y:{title:{display:true,text:'−log10(adj.P.Val)',color:t.text},ticks:{color:t.muted},grid:{color:t.grid}}}}
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      parsing: false,
+      normalized: true,
+      interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            color: plotTheme.text,
+            usePointStyle: true,
+            pointStyle: 'circle',
+            boxWidth: 9,
+          },
+        },
+        tooltip: {
+          callbacks: {
+            title: items => items[0]?.raw?.gene || '',
+            label: c => `logFC ${num(c.raw.x, 3)} · adj.P.Val ${sci(c.raw.p)} · ${c.raw.signif}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: xMin,
+          max: xMax,
+          title: { display: true, text: 'log2 Fold Change', color: plotTheme.text, font: { weight: '600' } },
+          ticks: { color: plotTheme.muted, maxTicksLimit: 10 },
+          grid: { color: plotTheme.grid },
+          border: { color: '#64748b' },
+        },
+        y: {
+          min: 0,
+          max: yMax,
+          title: { display: true, text: '−log10(adj.P.Val)', color: plotTheme.text, font: { weight: '600' } },
+          ticks: { color: plotTheme.muted },
+          grid: { color: plotTheme.grid },
+          border: { color: '#64748b' },
+        },
+      },
+    },
+    plugins: [
+      volcanoThresholdPlugin(),
+      volcanoGeneLabelsPlugin(labels),
+    ],
   }));
+}
+
+function volcanoThresholdPlugin() {
+  return {
+    id: 'genesis-r-volcano-thresholds',
+    afterDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      const x = scales.x, y = scales.y;
+      if (!x || !y || !chartArea) return;
+
+      const drawV = (value) => {
+        const px = x.getPixelForValue(value);
+        if (px < chartArea.left || px > chartArea.right) return;
+        ctx.beginPath();
+        ctx.moveTo(px, chartArea.top);
+        ctx.lineTo(px, chartArea.bottom);
+        ctx.stroke();
+      };
+      const drawH = (value) => {
+        const py = y.getPixelForValue(value);
+        if (py < chartArea.top || py > chartArea.bottom) return;
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, py);
+        ctx.lineTo(chartArea.right, py);
+        ctx.stroke();
+      };
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(71,85,105,.72)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 5]);
+      drawV(-0.5);
+      drawV(0.5);
+      drawH(-Math.log10(0.05));
+      ctx.restore();
+    },
+  };
+}
+
+function volcanoGeneLabelsPlugin(labels) {
+  return {
+    id: 'genesis-r-volcano-gene-labels',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      const x = scales.x, y = scales.y;
+      if (!x || !y || !chartArea || !labels?.length) return;
+
+      const placed = [];
+      ctx.save();
+      ctx.font = '600 10px Segoe UI, Arial, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i < labels.length; i++) {
+        const p = labels[i];
+        const px = x.getPixelForValue(p.x);
+        const py = y.getPixelForValue(p.y);
+        if (px < chartArea.left || px > chartArea.right || py < chartArea.top || py > chartArea.bottom) continue;
+
+        const text = p.gene;
+        const tw = Math.ceil(ctx.measureText(text).width);
+        const bw = tw + 10;
+        const bh = 17;
+        const preferRight = i % 2 === 0;
+        let bx = preferRight ? px + 7 : px - bw - 7;
+        bx = Math.max(chartArea.left + 2, Math.min(chartArea.right - bw - 2, bx));
+        let by = py - bh / 2;
+
+        // Pequena rotina de "repel" para evitar caixas sobrepostas.
+        for (let attempt = 0; attempt < 28; attempt++) {
+          const rect = { x: bx, y: by, w: bw, h: bh };
+          const collision = placed.some(r =>
+            rect.x < r.x + r.w + 2 && rect.x + rect.w + 2 > r.x &&
+            rect.y < r.y + r.h + 2 && rect.y + rect.h + 2 > r.y
+          );
+          if (!collision) break;
+          const step = Math.ceil((attempt + 1) / 2) * (bh + 2);
+          by = py - bh / 2 + (attempt % 2 === 0 ? step : -step);
+          by = Math.max(chartArea.top + 2, Math.min(chartArea.bottom - bh - 2, by));
+        }
+
+        const rect = { x: bx, y: by, w: bw, h: bh };
+        placed.push(rect);
+
+        ctx.strokeStyle = 'rgba(71,85,105,.48)';
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(preferRight ? bx : bx + bw, by + bh / 2);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255,255,255,.94)';
+        ctx.strokeStyle = 'rgba(100,116,139,.45)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#17212b';
+        ctx.fillText(text, bx + 5, by + bh / 2);
+      }
+      ctx.restore();
+    },
+  };
 }
 
 function drawCoxUni() {
@@ -284,8 +469,14 @@ function renderKm() {
 }
 
 function summarizeDea(rows) {
-  const out={up:0,down:0,ns:0,fdr05:0};
-  for(const r of rows){if(r.color_grp==='Upregulado')out.up++;else if(r.color_grp==='Downregulado')out.down++;else out.ns++;if(Number(r['adj.P.Val'])<.05)out.fdr05++;}
+  const out = { up: 0, down: 0, ns: 0, classified: 0, fdr05: 0 };
+  for (const r of rows) {
+    if (r.color_grp === 'Upregulado') out.up++;
+    else if (r.color_grp === 'Downregulado') out.down++;
+    else out.ns++;
+    if (String(r.signif || 'NS') !== 'NS') out.classified++;
+    if (Number(r['adj.P.Val']) < .05) out.fdr05++;
+  }
   return out;
 }
 function summarizeClinical(rows) {
