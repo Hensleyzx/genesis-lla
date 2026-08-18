@@ -1,0 +1,31 @@
+GENESIS LLA V10.7.4 — SINCRONIZAÇÃO FINAL
+
+O GitHub ficou com três arquivos antigos de versões anteriores:
+- src/js/common.js
+- src/js/analise.js
+- src/js/resultados-r.js
+
+Isso causa o erro:
+"The requested module '../src/js/common.js' does not provide an export named 'graphReport'"
+
+COMO CORRIGIR:
+1. Extraia este ZIP.
+2. Abra o repositório genesis-lla no GitHub.
+3. Code > Add file > Upload files.
+4. Arraste a pasta src extraída, mantendo a estrutura src/js/.
+5. Confirme que o GitHub mostra os 3 arquivos como modificados/substituídos.
+6. Commit changes.
+7. Aguarde o workflow Deploy GENESIS to GitHub Pages.
+
+NÃO apague o repositório.
+NÃO altere package.json, CSVs ou outros arquivos.
+
+Depois desta sincronização, a cópia V10.7.4 passa toda a suíte npm test local:
+- regressão científica
+- 250 coortes sintéticas
+- referência R
+- KM 92 -> 46/46
+- paciente
+- mini-laudos
+- heatmap demográfico
+- interface heatmap/oncoprint

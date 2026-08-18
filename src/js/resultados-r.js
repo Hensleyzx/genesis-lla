@@ -183,9 +183,9 @@ function rKmGraphReport(gene, result) {
     ? `O teste log-rank apresentou p=${fmtP(p)}, indicando diferença estatisticamente detectável entre as curvas nesta análise.`
     : `O teste log-rank apresentou p=${fmtP(p)}; nesta análise não houve evidência estatística suficiente de diferença entre as curvas pelo limiar de 0,05.`;
   return graphReport({
-    what: `Kaplan–Meier de OS para ${gene}. A curva compara expressão Alta (n=${result.high_n}) e Baixa (n=${result.low_n}); marcas na curva indicam censura e a faixa representa incerteza.`,
+    what: `Kaplan–Meier de OS para ${gene}. A saída R compara expressão Alta (n=${result.high_n}) e Baixa (n=${result.low_n}); marcas na curva indicam censura e a faixa representa incerteza. Nesse roteiro, n contabiliza observações de amostras de expressão alinhadas ao clínico.`,
     finding: significance,
-    caution: 'A direção e a magnitude devem ser lidas nas curvas e no contexto do modelo. O gráfico compara grupos e não estima sobrevivência individual nem estabelece causalidade.',
+    caution: 'A direção e a magnitude devem ser lidas nas curvas e no contexto do modelo. As contagens 46/46 da saída R não devem ser descritas automaticamente como 46 pacientes únicos por grupo, pois o roteiro trabalha no nível das amostras de expressão alinhadas ao clínico. O gráfico não estima sobrevivência individual nem estabelece causalidade.',
     source: 'GENESIS-R · saída R',
   });
 }
@@ -277,7 +277,7 @@ function renderStudy() {
     </div>
     <div class="genesis-r-km-frame mt-4"><img id="gr-km-image" alt="Curva Kaplan-Meier produzida no R"></div>
     <div id="gr-km-report"></div>
-    <p class="chart-note mt-3">As imagens exibem IC95%, marcas de censura, p do log-rank e tabela de pacientes em risco. Como o CSV ponto a ponto das curvas não foi fornecido, o GENESIS-R não redesenha estas curvas.</p>
+    <p class="chart-note mt-3">As imagens exibem IC95%, marcas de censura, p do log-rank e tabela de observações em risco. No roteiro R original, as amostras de expressão são alinhadas ao clínico por PATIENT_ID; portanto, as contagens 46/46 reproduzem a saída fornecida, mas não devem ser interpretadas automaticamente como pacientes únicos. Como o CSV ponto a ponto das curvas não foi fornecido, o GENESIS-R não redesenha estas curvas.</p>
   </section>
 
   <section class="card mt-6 genesis-r-section" id="gr-clinical">

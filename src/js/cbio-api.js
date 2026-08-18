@@ -2,9 +2,9 @@ export const CBIO_BASE = 'https://www.cbioportal.org/api';
 export const DEFAULT_LLA_STUDY = 'all_phase2_target_2018_pub';
 export const DATAHUB_BASE = 'https://datahub.assets.cbioportal.org';
 
-// As cinco coortes de LLA/ALL atualmente expostas no catálogo público do cBioPortal
-// e validadas pela interface GENESIS. A lista é explícita para evitar incluir AML ou
-// outras leucemias por correspondência textual acidental.
+// Cinco coortes de LLA/ALL selecionadas explicitamente para o GENESIS.
+// A lista curada evita incluir AML ou outras leucemias por correspondência textual acidental
+// e não deve ser interpretada como o total de estudos LLA existentes no cBioPortal.
 export const CORE_LLA_STUDY_IDS = [
   'all_phase2_target_2018_pub',
   'bll_target_gdc',
@@ -194,16 +194,33 @@ export const cbio = {
   },
 };
 
-export function chooseSampleList(lists, kind) {
-  const hay = lists.map((x) => ({
+export function chooseSampleList(lists, kind, profile = null) {
+  const hay = (lists || []).map((x) => ({
     ...x,
     text: `${x.sampleListId || ''} ${x.name || ''} ${x.description || ''} ${x.category || ''}`.toLowerCase(),
   }));
   if (kind === 'mutation') return hay.find((x) => /sequenced|mutation/.test(x.text)) || null;
   if (kind === 'rna') {
-    return hay.find((x) => /rna|mrna|rpkm|tpm|fpkm|expression/.test(x.text))
-      || hay.find((x) => /all cases|all samples/.test(x.text))
-      || null;
+    const profileText = `${profile?.molecularProfileId || ''} ${profile?.name || ''} ${profile?.description || ''}`.toLowerCase();
+    const wantsSeq = /rpkm|tpm|fpkm|rna[_ -]?seq|rnaseq/.test(profileText);
+    const wantsArray = /agilent|microarray|expression[_ -]?array|mrna[_ -]?array/.test(profileText);
+    const scored = hay.map((x, index) => {
+      let score = 0;
+      if (/rna|mrna|rpkm|tpm|fpkm|expression/.test(x.text)) score += 20;
+      if (/all cases|all samples/.test(x.text)) score += 2;
+      const isSeq = /rna[_ -]?seq|rnaseq/.test(x.text);
+      const isArray = /agilent|microarray|mrna[_ -]?array|expression[_ -]?array/.test(x.text);
+      if (wantsSeq) {
+        if (isSeq) score += 100;
+        if (isArray) score -= 100;
+      }
+      if (wantsArray) {
+        if (isArray) score += 100;
+        if (isSeq) score -= 60;
+      }
+      return { x, score, index };
+    }).sort((a, b) => b.score - a.score || a.index - b.index);
+    return scored[0]?.score > 0 ? scored[0].x : null;
   }
   return null;
 }
@@ -214,16 +231,18 @@ export function expressionTransformForProfile(profile) {
     return {
       key: 'log2p1',
       label: 'log2(expressão + 1)',
+      inputKey: /rpkm/.test(text) ? 'rpkm' : /tpm/.test(text) ? 'tpm' : 'fpkm',
       inputLabel: /rpkm/.test(text) ? 'RPKM' : /tpm/.test(text) ? 'TPM' : 'FPKM',
       reason: 'Perfil normalizado contínuo; a análise usa transformação log2(x+1).',
     };
   }
   if (/zscore|z-score/.test(text)) {
-    return { key: 'identity', label: 'z-score', inputLabel: 'z-score', reason: 'O perfil já está padronizado.' };
+    return { key: 'identity', label: 'z-score', inputKey: 'zscore', inputLabel: 'z-score', reason: 'O perfil já está padronizado.' };
   }
   return {
     key: 'identity',
     label: profile ? 'escala original' : 'não disponível',
+    inputKey: profile ? 'original' : 'unknown',
     inputLabel: 'valor de expressão',
     reason: profile ? 'Escala não reconhecida automaticamente; resultados devem ser conferidos no pipeline R.' : 'Estudo sem perfil de expressão compatível.',
   };

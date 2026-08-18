@@ -1,12 +1,12 @@
 import { median } from './stats.js';
 import { kmByGroup } from './survival.js';
+import { clinicalAgeYears, clinicalWbcX10e9L, normalizeWbcValue } from './clinical-utils.js';
+import { expressionScaleCompatibility } from './expression-scale.js';
 
 function num(v){if(v==null||String(v).trim()==='')return NaN;const x=Number(String(v).replace(',','.'));return Number.isFinite(x)?x:NaN}
 function transformExpressionValue(value,pack){const x=Number(value);if(!Number.isFinite(x))return NaN;return pack?.expressionTransform?.key==='log2p1'?Math.log2(Math.max(0,x)+1):x}
 function normText(v){return String(v??'').trim().toUpperCase().replace(/\s+/g,' ')}
 function sex(v){const s=normText(v);if(/^F/.test(s)||s==='FEMALE')return'F';if(/^M/.test(s)||s==='MALE')return'M';return''}
-function ageYears(row){let x=num(row?.AGE_IN_DAYS);if(Number.isFinite(x)&&x>=0)return x/365.25;x=num(row?.AGE);if(!Number.isFinite(x)||x<0)return NaN;return x>150?x/365.25:x}
-function wbc(row){for(const k of ['WBC','WBC_AT_DIAGNOSIS','WHITE_BLOOD_CELL_COUNT']){const x=num(row?.[k]);if(Number.isFinite(x)&&x>=0)return x}return NaN}
 function subtype(row){return normText(row?.MOLECULAR_SUBTYPE||row?.ANALYSIS_COHORT||row?.CELL_OF_ORIGIN||'')}
 function fusionStatus(v){const s=normText(v);if(!s||/UNKNOWN|NOT AVAILABLE|N\/A|NA$/.test(s))return'';if(/POSITIVE|PRESENT|DETECTED|YES|(^|:)1($|:)/.test(s))return'positivo';if(/NEGATIVE|ABSENT|NOT DETECTED|NO|(^|:)0($|:)/.test(s))return'negativo';return''}
 function robustScale(values){const xs=values.filter(Number.isFinite);if(xs.length<3)return 1;const med=median(xs);const dev=xs.map(x=>Math.abs(x-med));const mad=median(dev);return Number.isFinite(mad)&&mad>1e-9?1.4826*mad:Math.max(1e-6,(Math.max(...xs)-Math.min(...xs))/4||1)}
@@ -20,35 +20,37 @@ export function buildMatchedCohort(dp,vectors,dados,expMap){
   const mutationByGene=patientMutationIndex(dp);
   const mutationProfiled=new Set((dp.pack?.mutationSelection?.patientIds||[]).map(String));
   const caseSubtype=normText(dados.subtipoMolecular||'');
-  const caseAge=num(dados.idade),caseWbc=num(dados.leucocitos),caseSex=sex(dados.sexo),caseFusion=String(dados.fusoes?.['BCR-ABL1']||'nao_informado');
+  const caseAge=num(dados.idade),caseWbc=normalizeWbcValue(dados.leucocitos,dados.unidadeLeucocitos),caseSex=sex(dados.sexo),caseFusion=String(dados.fusoes?.['BCR-ABL1']||'nao_informado');
+  const wbcUnit=dp?.pack?.clinicalUnits?.wbc||{key:'unknown'};
+  const exprCompatibility=expressionScaleCompatibility(dados.escalaExpressao,dp?.pack||{});
   const exprFeatures=[];
   for(const gene of dados.biomarcadores||[]){
     const raw=num(dados.expressao?.[gene]);const row=expMap?.get(String(gene).toUpperCase());
-    if(!Number.isFinite(raw)||!row)continue;
+    if(!exprCompatibility.compatible||!Number.isFinite(raw)||!row)continue;
     const vals=vectors.sampleIndices.map(i=>Number.isInteger(i)?transformExpressionValue(row.values?.[i],dp.pack):NaN);
     const finite=vals.filter(Number.isFinite);if(finite.length<8)continue;
     exprFeatures.push({gene:String(gene).toUpperCase(),caseValue:transformExpressionValue(raw,dp.pack),values:vals,scale:robustScale(finite)});
   }
-  const alterationFeatures=Object.entries(dados.alteracoes||{}).filter(([,v])=>v==='presente'||v==='ausente').map(([g,v])=>({gene:String(g).toUpperCase(),status:v}));
+  const alterationFeatures=Object.entries(dados.mutacoesSomaticas||dados.alteracoes||{}).filter(([,v])=>v==='presente'||v==='ausente').map(([g,v])=>({gene:String(g).toUpperCase(),status:v}));
   const criteria=[];
   if(Number.isFinite(caseAge))criteria.push('idade');
-  if(Number.isFinite(caseWbc))criteria.push('leucócitos');
+  if(Number.isFinite(caseWbc)&&wbcUnit?.key&&wbcUnit.key!=='unknown')criteria.push('leucócitos (×10⁹/L padronizado)');
   if(caseSex)criteria.push('sexo');
   if(caseSubtype)criteria.push('subtipo molecular');
   if(caseFusion==='positivo'||caseFusion==='negativo')criteria.push('BCR-ABL1');
-  if(alterationFeatures.length)criteria.push(`${alterationFeatures.length} alteração(ões) genética(s)`);
+  if(alterationFeatures.length)criteria.push(`${alterationFeatures.length} mutação(ões) somática(s)`);
   if(exprFeatures.length)criteria.push(`${exprFeatures.length} medida(s) de expressão`);
-  if(criteria.length<2)return {available:false,reason:'Informe pelo menos dois critérios comparáveis (por exemplo idade + alteração genética, subtipo + expressão, ou múltiplas alterações) para formar uma coorte semelhante.',criteria};
+  if(criteria.length<2)return {available:false,reason:'Informe pelo menos dois critérios comparáveis (por exemplo idade + mutação somática, subtipo + expressão, ou múltiplas mutações somáticas) para formar uma coorte semelhante.',criteria};
 
   const rows=[];
   for(let i=0;i<vectors.patients.length;i++){
     const patientId=String(vectors.patients[i]||'');const clinical=clinicalByPatient.get(patientId)||vectors.clinicalRows?.[i]||{};const parts=[];
-    const a=ageYears(clinical);if(Number.isFinite(caseAge)&&Number.isFinite(a))addFeature(parts,'idade',simContinuous(caseAge,a,5),1.5);
-    const cw=wbc(clinical);if(Number.isFinite(caseWbc)&&Number.isFinite(cw))addFeature(parts,'leucócitos',simContinuous(Math.log1p(caseWbc),Math.log1p(cw),0.8),1.5);
+    const a=clinicalAgeYears(clinical);if(Number.isFinite(caseAge)&&Number.isFinite(a))addFeature(parts,'idade',simContinuous(caseAge,a,5),1.5);
+    const cw=clinicalWbcX10e9L(clinical,wbcUnit);if(Number.isFinite(caseWbc)&&Number.isFinite(cw))addFeature(parts,'leucócitos',simContinuous(Math.log1p(caseWbc),Math.log1p(cw),0.8),1.5);
     const cs=sex(clinical.SEX||clinical.GENDER);if(caseSex&&cs)addFeature(parts,'sexo',caseSex===cs?1:0,0.5);
     const st=subtype(clinical);if(caseSubtype&&st){const exact=caseSubtype===st;const partial=!exact&&(caseSubtype.includes(st)||st.includes(caseSubtype));addFeature(parts,'subtipo molecular',exact?1:partial?.7:0,3);}
     if(caseFusion==='positivo'||caseFusion==='negativo'){const fs=fusionStatus(clinical.BCR_ABL1_STATUS);if(fs)addFeature(parts,'BCR-ABL1',fs===caseFusion?1:0,4);}
-    for(const f of alterationFeatures){if(!mutationProfiled.has(patientId))continue;const present=mutationByGene[f.gene]?.has(patientId)||false;const same=(f.status==='presente')===present;addFeature(parts,`alteração ${f.gene}`,same?1:0,4);}
+    for(const f of alterationFeatures){if(!mutationProfiled.has(patientId))continue;const present=mutationByGene[f.gene]?.has(patientId)||false;const same=(f.status==='presente')===present;addFeature(parts,`mutação ${f.gene}`,same?1:0,4);}
     for(const f of exprFeatures){const v=f.values[i];if(Number.isFinite(v))addFeature(parts,`expressão ${f.gene}`,simContinuous(f.caseValue,v,1.5*f.scale),2);}
     // Um candidato precisa ser comparável em pelo menos dois critérios do caso;
     // caso contrário, uma única variável disponível poderia dominar artificialmente o pareamento.

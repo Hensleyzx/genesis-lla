@@ -28,7 +28,7 @@ const dp={
     nGenes:2,
     buildDate:'2026-08-17T00:00:00Z',
     scope:'expresso',
-    expressionTransform:{key:'none',label:'sem transformação'},
+    expressionTransform:{key:'identity',inputKey:'zscore',inputLabel:'z-score',label:'sem transformação'},
     selection:{method:'fixture'},
     mutationSelection:{sampleIds,patientIds:clinicalRows.map(r=>r.PATIENT_ID)},
     capabilities:{clinical:true,mutation:true,expression:true,survival:true}
@@ -56,7 +56,9 @@ const result=await analyzeAgainstStudy({
   subtipoMolecular:'B-ALL',
   biomarcadores:['TP53','IKZF1'],
   expressao:{TP53:2.1},
+  escalaExpressao:'zscore',
   alteracoes:{TP53:'presente'},
+  mutacoesSomaticas:{TP53:'presente'},
   fusoes:{'BCR-ABL1':'nao_informado'}
 },dp);
 

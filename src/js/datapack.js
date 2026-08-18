@@ -1,15 +1,16 @@
 import { cbio, chooseSampleList, DEFAULT_LLA_STUDY, expressionTransformForProfile, isLlaStudy } from './cbio-api.js';
 import * as ST from './storage.js';
 import { GENE_IDS } from './data.js';
+import { inferWbcUnit } from './clinical-utils.js';
 
-const DATA_VERSION = 9;
+const DATA_VERSION = 11;
 const CLINICAL_CANDIDATES = [
   'PATIENT_ID','OS_MONTHS','OS_DAYS','OS_STATUS','VITAL_STATUS','DFS_MONTHS','EFS_MONTHS','DFS_STATUS','EFS_STATUS','DAYS_TO_EVENT','DAYS_TO_DEATH',
   'FIRST_EVENT','AGE','AGE_IN_DAYS','GENDER','SEX','WBC','MOLECULAR_SUBTYPE','ANALYSIS_COHORT','MRD_PERCENT_DAY_29',
   'BCR_ABL1_STATUS','ETV6_RUNX1_FUSION_STATUS','MLL_STATUS','TCF3_PBX1_STATUS','TRISOMY_4_10','CELL_OF_ORIGIN','CANCER_TYPE','CANCER_TYPE_DETAILED'
 ];
 
-function pivotClinical(records){const attrs=[],rows=new Map();for(const item of records){if(!rows.has(item.patientId))rows.set(item.patientId,{PATIENT_ID:item.patientId});rows.get(item.patientId)[item.clinicalAttributeId]=item.value;if(!attrs.includes(item.clinicalAttributeId))attrs.push(item.clinicalAttributeId);}return{attributes:attrs,rows:[...rows.values()]};}
+function pivotClinical(records,attributeMetadata=[]){const attrs=[],rows=new Map();for(const item of records){if(!rows.has(item.patientId))rows.set(item.patientId,{PATIENT_ID:item.patientId});rows.get(item.patientId)[item.clinicalAttributeId]=item.value;if(!attrs.includes(item.clinicalAttributeId))attrs.push(item.clinicalAttributeId);}return{attributes:attrs,attributeMetadata:(attributeMetadata||[]).filter(a=>attrs.includes(a.clinicalAttributeId)),rows:[...rows.values()]};}
 function patientIdOfSample(sample){if(sample?.patientId)return String(sample.patientId);return String(sample?.sampleId||'').replace(/\.\d+$/,'').replace(/-[0-9A-Za-z]+$/,'');}
 function sampleTypeCode(sampleId){const m=String(sampleId||'').match(/-([0-9]{2})(?:[A-Z])?(?:\.\d+)?$/i);return m?m[1]:null;}
 
@@ -28,15 +29,16 @@ export async function buildDatapack({studyId=DEFAULT_LLA_STUDY,scope='expresso',
   const [study,samples,lists,attrs,resolved]=await Promise.all([cbio.getStudy(studyId),cbio.getSamples(studyId),cbio.getSampleLists(studyId),cbio.getClinicalAttributes(studyId),cbio.resolveProfiles(studyId)]);
   if(!isLlaStudy(study))throw new Error('O GENESIS V10.7 aceita apenas estudos de Leucemia Linfoblástica/Linfoide Aguda (LLA/ALL).');
   const sampleToPatient=new Map(samples.map(s=>[s.sampleId,patientIdOfSample(s)]));
-  const rnaList=chooseSampleList(lists,'rna'),mutList=chooseSampleList(lists,'mutation');
+  const rnaList=chooseSampleList(lists,'rna',resolved.expression),mutList=chooseSampleList(lists,'mutation',resolved.mutation);
   let rnaSampleIds=resolved.expression?(rnaList?await cbio.getSampleListIds(rnaList.sampleListId):samples.map(s=>s.sampleId)):[];
   let mutSampleIds=resolved.mutation?(mutList?await cbio.getSampleListIds(mutList.sampleListId):samples.map(s=>s.sampleId)):[];
   rnaSampleIds=rnaSampleIds.filter(id=>sampleToPatient.has(id));mutSampleIds=mutSampleIds.filter(id=>sampleToPatient.has(id));
   const analysisSelection=selectAnalysisSamples(samples,rnaSampleIds);
   // Dois universos são preservados de propósito:
   // 1) BASAL: uma amostra primária por paciente (análises clínicas exploratórias).
-  // 2) R-COMPATÍVEL: todas as amostras do case list de expressão, como no Script.R
-  //    do projeto, que alinha sample_id -> patient_id antes de KM/Cox.
+  // 2) MODO COMPATÍVEL COM REFERÊNCIA R: todas as amostras do case list correspondente
+  //    ao perfil de expressão selecionado, alinhadas sample_id -> patient_id como no
+  //    roteiro R original que gerou as figuras de referência do projeto.
   const mutationSelection=selectAnalysisSamples(samples,mutSampleIds);
   const analysisSampleIds=analysisSelection.sampleIds;
   const rExpressionSampleIds=[...rnaSampleIds];
@@ -46,12 +48,13 @@ export async function buildDatapack({studyId=DEFAULT_LLA_STUDY,scope='expresso',
   const patients=analysisSelection.patientIds.length?analysisSelection.patientIds:[...new Set(samples.map(patientIdOfSample).filter(Boolean))];
   const analysisPatientIds=[...patients];
   const clinicalPatientIds=[...new Set([...patients,...rExpressionPatientIds])];
-  onProgress({pct:8,phase:'samples',msg:`${patients.length} pacientes basais · ${rExpressionSampleIds.length} amostras de expressão no modo compatível com R`});
+  onProgress({pct:8,phase:'samples',msg:`${patients.length} pacientes na seleção basal · ${rExpressionSampleIds.length} amostras no perfil de expressão selecionado`});
 
   const availableAttrs=new Set(attrs.map(a=>a.clinicalAttributeId)),clinicalAttrs=CLINICAL_CANDIDATES.filter(id=>availableAttrs.has(id));
   onProgress({pct:12,phase:'clinical',msg:'Baixando dados clínicos…'});
   const clinicalRaw=clinicalAttrs.length&&clinicalPatientIds.length?await cbio.fetchClinical(studyId,clinicalAttrs,clinicalPatientIds,(done,total)=>onProgress({pct:12+Math.round(8*done/total),phase:'clinical',msg:`Dados clínicos ${done}/${total}`})):[];
-  const clinical=pivotClinical(clinicalRaw);
+  const clinical=pivotClinical(clinicalRaw,attrs);
+  const wbcUnit=inferWbcUnit({rows:clinical.rows,attributeMetadata:clinical.attributeMetadata});
 
   onProgress({pct:22,phase:'genes',msg:'Carregando mapa de genes humanos…'});
   const geneMap=await loadGeneMap(n=>onProgress({pct:22,phase:'genes',msg:`${n.toLocaleString('pt-BR')} genes indexados`}));
@@ -81,7 +84,7 @@ export async function buildDatapack({studyId=DEFAULT_LLA_STUDY,scope='expresso',
   }
 
   const transform=expressionTransformForProfile(resolved.expression);
-  const meta={dataVersion:DATA_VERSION,studyId,studyName:study.name||study.shortName||studyId,studyDescription:study.description||'',studyCitation:study.citation||'',pmid:study.pmid||'',referenceGenome:study.referenceGenome||'',scope,buildDate:new Date().toISOString(),nPatients:patients.length,nRnaSamples:rnaSampleIds.length,nAnalysisSamples:analysisSampleIds.length,nRCompatibleSamples:rExpressionSampleIds.length,nMutationSamples:mutationProfileSampleIds.length,nMutationBasalSamples:analysisMutationSampleIds.length,nGenes:expr.length,analysisPatientIds,analysisSampleIds,rExpressionSampleIds,rExpressionPatientIds,sampleToPatient:Object.fromEntries(sampleToPatient),mutationProfileId:resolved.mutation?.molecularProfileId||null,expressionProfileId:resolved.expression?.molecularProfileId||null,expressionProfileName:resolved.expression?.name||'',expressionTransform:transform,selection:analysisSelection,mutationSelection,mutationDenominatorPolicy:'PROFILED_MUTATION_CASE_LIST',survivalModes:{basal:'Uma amostra basal por paciente',rCompatible:'Todas as amostras de expressão alinhadas ao clínico, como no Script.R; ausências de expressão imputadas pela mediana do gene.'},capabilities:{clinical:clinical.rows.length>0,mutation:!!resolved.mutation,expression:!!resolved.expression,survival:clinical.attributes.some(x=>/OS_MONTHS|OS_DAYS|OVERALL_SURVIVAL_MONTHS|OS_STATUS|VITAL_STATUS/i.test(x))}};
+  const meta={dataVersion:DATA_VERSION,studyId,studyName:study.name||study.shortName||studyId,studyDescription:study.description||'',studyCitation:study.citation||'',pmid:study.pmid||'',referenceGenome:study.referenceGenome||'',scope,buildDate:new Date().toISOString(),nPatients:patients.length,nRnaSamples:rnaSampleIds.length,nAnalysisSamples:analysisSampleIds.length,nRCompatibleSamples:rExpressionSampleIds.length,nMutationSamples:mutationProfileSampleIds.length,nMutationBasalSamples:analysisMutationSampleIds.length,nGenes:expr.length,analysisPatientIds,analysisSampleIds,rExpressionSampleIds,rExpressionPatientIds,sampleToPatient:Object.fromEntries(sampleToPatient),mutationProfileId:resolved.mutation?.molecularProfileId||null,mutationSampleListId:mutList?.sampleListId||null,mutationSampleListName:mutList?.name||mutList?.description||'',expressionProfileId:resolved.expression?.molecularProfileId||null,expressionProfileName:resolved.expression?.name||'',expressionSampleListId:rnaList?.sampleListId||null,expressionSampleListName:rnaList?.name||rnaList?.description||'',expressionTransform:transform,selection:analysisSelection,mutationSelection,mutationDenominatorPolicy:'PROFILED_MUTATION_CASE_LIST',clinicalUnits:{wbc:wbcUnit},survivalModes:{basal:'Uma amostra basal por paciente',rCompatible:'Modo compatível com o procedimento R de referência: todas as amostras de expressão alinhadas ao clínico; ausências de expressão imputadas pela mediana do gene. A equivalência numérica integral depende dos dados brutos originais.'},capabilities:{clinical:clinical.rows.length>0,mutation:!!resolved.mutation,expression:!!resolved.expression,survival:clinical.attributes.some(x=>/OS_MONTHS|OS_DAYS|OVERALL_SURVIVAL_MONTHS|OS_STATUS|VITAL_STATUS/i.test(x))}};
   const sid=studyId;
   await ST.set('meta',`pack:${sid}`,meta);
   await ST.set('meta','activeStudyId',sid);

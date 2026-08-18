@@ -104,7 +104,7 @@ function renderWorkspace(top10) {
         <h3>${esc(p.studyName)}</h3>
         <p>${esc(p.studyId)} · ${p.nPatients || 0} pacientes basais · ${p.nAnalysisSamples || 0} amostras basais · ${p.nRCompatibleSamples || p.nRnaSamples || 0} amostras no perfil de expressão · ${mutationDenom} amostras no perfil mutacional</p>
       </div>
-      <div class="cohort-warning"><strong>Política de denominador:</strong> Top 30 usa o case list mutacional completo. Para KM/Cox você pode usar <b>Compatibilidade R</b> (mesmo universo de amostras de expressão do Script.R) ou <b>Basal por paciente</b>. No TARGET ALL, Compatibilidade R é o padrão para reproduzir 46/46 quando houver 92 observações válidas.</div>
+      <div class="cohort-warning"><strong>Política de denominador:</strong> Top 30 usa o case list mutacional completo. No TARGET ALL, KM/Cox usam por padrão a <b>Referência R do professor</b>, que segue o mesmo universo/alinhamento de amostras descrito no roteiro R de referência e permite conferir a divisão 46/46 quando há 92 observações válidas. O modo <b>Basal por paciente</b> é uma análise alternativa, deduplicada, e por isso pode ter outro n.</div>
     </div>
   </div>
 
@@ -129,9 +129,9 @@ function renderWorkspace(top10) {
   <div class="card mt-6">
     <div class="section-route"><span>3</span><div><strong>Escolher quais gráficos gerar</strong><small>Nenhum gráfico é executado automaticamente. O usuário solicita somente o que quer visualizar.</small></div></div>
     <div class="survival-mode-box mt-4">
-      <div><strong>Modo de sobrevida (KM/Cox)</strong><small>No TARGET ALL, use Compatibilidade R para reproduzir o pipeline do professor. O modo basal permanece disponível para a análise deduplicada por paciente.</small></div>
-      <label><input type="radio" name="survival-mode" value="r" ${p.studyId===DEFAULT_LLA_STUDY?'checked':''} ${!(p.nRCompatibleSamples||p.nRnaSamples)?'disabled':''}> <span><b>Compatibilidade R</b><small>Todas as amostras de expressão alinhadas ao clínico; NA de expressão imputado pela mediana do gene antes do KM/Cox.</small></span></label>
-      <label><input type="radio" name="survival-mode" value="basal" ${p.studyId!==DEFAULT_LLA_STUDY?'checked':''}> <span><b>Basal por paciente</b><small>Uma amostra primária por paciente; evita duplicação de indivíduos.</small></span></label>
+      <div><strong>Modo de sobrevida (KM/Cox)</strong><small>No TARGET ALL, o modo compatível com referência R é o padrão para comparar a estrutura das figuras fornecidas. O modo basal permanece disponível como análise alternativa deduplicada por paciente.</small></div>
+      <label><input type="radio" name="survival-mode" value="r" ${p.studyId===DEFAULT_LLA_STUDY?'checked':''} ${!(p.nRCompatibleSamples||p.nRnaSamples)?'disabled':''}> <span><b>Modo compatível com referência R</b><small>Segue o alinhamento de amostras e a imputação por mediana do procedimento de referência. A equivalência numérica integral com as figuras originais depende da matriz bruta original; n representa observações de amostra, não necessariamente pacientes únicos.</small></span></label>
+      <label><input type="radio" name="survival-mode" value="basal" ${p.studyId!==DEFAULT_LLA_STUDY?'checked':''}> <span><b>Basal por paciente (alternativa)</b><small>Uma amostra primária por paciente; evita duplicação de indivíduos e pode produzir um n diferente da figura R original.</small></span></label>
     </div>
     <div class="graph-choice-grid mt-4">
       ${graphChoice('top30','Top 30 oficial — referência R','TARGET ALL · n=150 · usa a figura/valores validados pelo professor e pelo pipeline R.')}
@@ -334,7 +334,7 @@ function kmGraphReport(gene, survival) {
   const p = Number(survival?.logRank?.p);
   const significant = Number.isFinite(p) && p < .05;
   return graphReport({
-    what: `Kaplan–Meier de Sobrevida Global para ${gene}, comparando grupos Alto e Baixo definidos pela mediana de expressão. O segundo gráfico compara eventos observados e esperados usados no log-rank.`,
+    what: `Kaplan–Meier de Sobrevida Global para ${gene}, comparando grupos Alto e Baixo definidos pela mediana de expressão. O teste log-rank é resumido numericamente por χ² e p-value.`,
     finding: Number.isFinite(p)
       ? `${significant ? 'O log-rank detectou diferença estatisticamente significativa' : 'O log-rank não detectou diferença estatisticamente significativa'} pelo limiar de 0,05 (p=${fmtP(p)}; Alto n=${survival.nAlto}; Baixo n=${survival.nBaixo}). A direção e a magnitude da separação devem ser observadas nas próprias curvas e nos IC95%.`
       : 'O p do log-rank não ficou disponível.',
@@ -449,7 +449,7 @@ function coxCard(genes) {
   const available = ctx.genes;
   const v=ctx.v;
   if (!available.length || !v.endpointAdequate) return noDataCard('Forest Plot — Cox univariado','Endpoint/expressão insuficientes: são necessários pelo menos 20 registros válidos e 5 eventos, além de expressão para o(s) gene(s) selecionado(s).');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Somente os genes escolhidos. HR por +1 DP de expressão; no modo Compatibilidade R a escala segue o RPKM bruto do Script.R antes da padronização; IC95% e p são locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução. O teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Somente os genes escolhidos. HR por +1 DP de expressão; no modo compatível com referência R a escala segue a expressão usada pelo procedimento de referência antes da padronização. IC95% e p são locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução. O teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div></div>`;
 }
 
 function kmCard(gene) {
@@ -457,7 +457,7 @@ function kmCard(gene) {
   const row = ctx.rows[gene];
   const v = ctx.v;
   if (!row || !v.endpointAdequate) return noDataCard(`Kaplan-Meier — ${gene}`,`${gene} não possui expressão alinhada com um endpoint adequado (mínimo 20 registros e 5 eventos) no estudo ativo.`);
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(v.endpointLabel||'sobrevida')}</span><span class="study-pill">${esc(v.endpointTimeColumn||'tempo?')}</span><span class="study-pill">gene ${esc(gene)}</span>`)}<div class="card__title">Kaplan-Meier — ${esc(gene)}</div><div class="card__subtitle">Grupos Alto/Baixo definidos pela mediana de expressão na coorte do modo escolhido. A faixa translúcida representa o IC95% log-log/Greenwood. Curva de grupos de referência, não previsão individual.</div><div class="single-result-canvas"><canvas id="result-km-${safeId(gene)}"></canvas></div><div class="card__subtitle mt-4"><strong>Log-rank — eventos observados × esperados</strong></div><div class="single-result-canvas" style="min-height:260px"><canvas id="result-km-oe-${safeId(gene)}"></canvas></div><div id="km-graph-report-${safeId(gene)}"></div><div id="km-meta-${safeId(gene)}" class="mt-3"></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(v.endpointLabel||'sobrevida')}</span><span class="study-pill">${esc(v.endpointTimeColumn||'tempo?')}</span><span class="study-pill">gene ${esc(gene)}</span>`)}<div class="card__title">Kaplan-Meier — ${esc(gene)}</div><div class="card__subtitle">Grupos Alto/Baixo definidos pela mediana de expressão na coorte do modo escolhido. A faixa translúcida representa o IC95% log-log/Greenwood. Curva de grupos de referência, não previsão individual.</div><div class="single-result-canvas"><canvas id="result-km-${safeId(gene)}"></canvas></div><div id="km-graph-report-${safeId(gene)}"></div><div id="km-meta-${safeId(gene)}" class="mt-3"></div></div>`;
 }
 
 function noDataCard(title, note) {
@@ -582,8 +582,7 @@ function drawKM(gene) {
   const x=survivalContextFor([gene]),v=x.v,row=x.rows[gene]; if(!row||!v.endpointAdequate) return false;
   const s=analyzeSurvival(v.time,v.event,row.values);
   if(!s||!s.km?.length){
-    if(el.parentElement)el.parentElement.innerHTML='<div class="empty-science">Kaplan-Meier não gerado: este gene não atingiu ≥20 casos completos, ≥5 eventos e ≥5 indivíduos em cada grupo definido pela mediana.</div>';
-    const oe=document.getElementById(`result-km-oe-${safeId(gene)}`);if(oe?.parentElement)oe.parentElement.innerHTML='<div class="empty-science">Observado × esperado indisponível porque o log-rank não foi executado.</div>';
+    if(el.parentElement)el.parentElement.innerHTML='<div class="empty-science">Kaplan-Meier não gerado: este gene não atingiu ≥20 casos completos, ≥5 eventos e ≥5 observações em cada grupo definido pela mediana.</div>';
     const meta=document.getElementById(`km-meta-${safeId(gene)}`);if(meta)meta.innerHTML='<div class="alert warning"><i class="fa-solid fa-triangle-exclamation"></i> Dados insuficientes para uma curva Kaplan-Meier protegida neste gene.</div>';
     return false;
   }
@@ -632,17 +631,8 @@ function drawKM(gene) {
     }
   }));
 
-  const oeEl=document.getElementById(`result-km-oe-${safeId(gene)}`);
-  if(oeEl&&s.logRank?.labels?.length){
-    charts.push(new Chart(oeEl,{
-      type:'bar',
-      data:{labels:s.logRank.labels,datasets:[
-        {label:'Eventos observados',data:s.logRank.O,backgroundColor:'rgba(192,57,43,.72)'},
-        {label:'Eventos esperados',data:s.logRank.E,backgroundColor:'rgba(41,128,185,.58)'}
-      ]},
-      options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{labels:{color:t.text}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${Number(c.raw).toFixed(3)}`}}},scales:{x:{ticks:{color:t.text},grid:{display:false}},y:{beginAtZero:true,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'Número de eventos',color:t.text}}}}
-    }));
-  }
+  // O gráfico auxiliar observado × esperado foi removido da interface a pedido do orientador.
+  // As quantidades O/E continuam preservadas no JSON do log-rank para auditoria estatística.
 
   const maxTime=Math.max(...s.km.flatMap(g=>g.obs.map(o=>o.t)).filter(Number.isFinite),0);
   const riskTimes=niceRiskTimes(maxTime);
@@ -652,7 +642,7 @@ function drawKM(gene) {
   if(kmReport) kmReport.innerHTML=kmGraphReport(gene,s);
   const meta=document.getElementById(`km-meta-${safeId(gene)}`);
   if(meta){
-    meta.innerHTML=`<div class="validation-strip"><div><span>Gene</span><strong>${esc(gene)}</strong></div><div><span>Corte de expressão</span><strong>mediana = ${Number(s.medianCut).toFixed(4)}</strong></div><div><span>Grupos</span><strong>Alto n=${s.nAlto} · Baixo n=${s.nBaixo}</strong></div><div><span>Log-rank</span><strong>χ²=${Number(s.logRank?.chi2||0).toFixed(4)} · p=${fmtP(s.logRank?.p)}</strong></div><div><span>Endpoint</span><strong>${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'—')}</strong></div><div><span>Modo</span><strong>${esc(x.modeLabel||'Basal por paciente')}</strong></div><div><span>Eventos</span><strong>${s.events}/${s.n}</strong></div></div>${riskTable}<div class="flex gap-2 mt-3" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="km-json-${safeId(gene)}"><i class="fa-solid fa-file-code"></i> Baixar dados KM em JSON</button></div><p class="chart-note mt-3">IC95%: transformação log-log com variância de Greenwood. O gráfico observado × esperado usa exatamente as quantidades do mesmo teste log-rank. KM e Cox usam o mesmo conjunto de casos completos por gene (OS + expressão). No modo Compatibilidade R, ausências de expressão são imputadas pela mediana do gene antes do filtro de OS, reproduzindo a ordem do Script.R. O selo “validado contra R” só é permitido depois da comparação numérica com a saída R correspondente.</p>`;
+    meta.innerHTML=`<div class="validation-strip"><div><span>Gene</span><strong>${esc(gene)}</strong></div><div><span>Corte de expressão</span><strong>mediana = ${Number(s.medianCut).toFixed(4)}</strong></div><div><span>Grupos</span><strong>Alto n=${s.nAlto} · Baixo n=${s.nBaixo}</strong></div><div><span>Log-rank</span><strong>χ²=${Number(s.logRank?.chi2||0).toFixed(4)} · p=${fmtP(s.logRank?.p)}</strong></div><div><span>Endpoint</span><strong>${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'—')}</strong></div><div><span>Modo</span><strong>${esc(x.modeLabel||'Basal por paciente')}</strong></div><div><span>Eventos</span><strong>${s.events}/${s.n}</strong></div></div>${riskTable}<div class="flex gap-2 mt-3" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="km-json-${safeId(gene)}"><i class="fa-solid fa-file-code"></i> Baixar dados KM em JSON</button></div><p class="chart-note mt-3">IC95%: transformação log-log com variância de Greenwood. O log-rank permanece calculado e é apresentado por χ² e p-value; o gráfico auxiliar de eventos observados × esperados foi removido. KM e Cox usam o mesmo conjunto de casos completos por gene (OS + expressão). ${x.mode==='r'?'No modo compatível com referência R, n representa observações de amostras de expressão alinhadas ao clínico e pode incluir mais de uma amostra do mesmo paciente; a equivalência integral com a saída R original só pode ser afirmada após comparação numérica usando a matriz bruta correspondente.':'No modo Basal por paciente, n representa a seleção deduplicada de uma amostra por paciente.'} O selo “validado contra R” só é permitido depois da comparação numérica com a saída R correspondente.</p>`;
     const btn=document.getElementById(`km-json-${safeId(gene)}`);
     if(btn)btn.onclick=()=>downloadJson(`GENESIS_KM_${safeId(gene)}_${safeId(dp.pack.studyId)}.json`,{
       schema:'GENESIS_KM_V10_3',generatedAt:new Date().toISOString(),studyId:dp.pack.studyId,studyName:dp.pack.studyName,gene,
@@ -691,7 +681,7 @@ function survivalContextFor(genes){
       const values=v.sampleIndices.map(i=>Number.isInteger(i)?info.values[i]:NaN);
       rows[gene]={values,medianImputation:info.medianImputation};available.push(gene);
     }
-    return{v,rows,genes:available,mode:'r',modeLabel:'Compatibilidade R'};
+    return{v,rows,genes:available,mode:'r',modeLabel:'Modo compatível com referência R'};
   }
   const v=buildReferenceVectors(dp),map=new Map((dp.expr||[]).map(r=>[String(r.symbol).toUpperCase(),r]));
   for(const gene of genes){const src=map.get(gene);if(!src)continue;const values=v.sampleIndices.map(i=>Number.isInteger(i)?transformExpressionValue(src.values?.[i],dp.pack):NaN);rows[gene]={values};available.push(gene);}

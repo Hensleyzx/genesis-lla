@@ -1,4 +1,5 @@
 import { transformExpressionValue } from './analysis-engine.js';
+import { clinicalAgeYears as normalizedClinicalAgeYears } from './clinical-utils.js';
 
 function finiteNumber(value) {
   if (value == null || String(value).trim() === '') return NaN;
@@ -15,11 +16,7 @@ export function normalizeClinicalSex(value) {
 }
 
 export function clinicalAgeYears(row = {}) {
-  const age = finiteNumber(row.AGE);
-  if (Number.isFinite(age)) return age;
-  const days = finiteNumber(row.AGE_IN_DAYS);
-  if (Number.isFinite(days)) return days / 365.25;
-  return NaN;
+  return normalizedClinicalAgeYears(row);
 }
 
 export function median(values = []) {

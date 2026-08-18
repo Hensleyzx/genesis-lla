@@ -1,7 +1,7 @@
 {
-  "name": "genesis-lla-v10-7-r-compat",
+  "name": "genesis-lla-v10-7-6-scientific-hardening",
   "private": true,
-  "version": "10.7.4",
+  "version": "10.7.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "test:science": "node tests/scientific-smoke.mjs && node tests/fuzz-invariants.mjs && node tests/r-reference-integrity.mjs && node tests/teacher-request-regression.mjs && node tests/genesis-r-study.mjs && node tests/km-r-compat-regression.mjs",
+    "test:science": "node tests/scientific-smoke.mjs && node tests/fuzz-invariants.mjs && node tests/r-reference-integrity.mjs && node tests/teacher-request-regression.mjs && node tests/genesis-r-study.mjs && node tests/km-r-compat-regression.mjs && node tests/teacher-review-v10-7-5.mjs && node tests/scientific-hardening-v10-7-6.mjs",
     "test:site": "node tests/site-integrity.mjs && node tests/patient-integration.mjs && node tests/graph-report-regression.mjs && node tests/demographic-heatmap-regression.mjs && node tests/heatmap-ui-regression.mjs",
     "test": "npm run test:science && npm run test:site"
   },

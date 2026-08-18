@@ -34,7 +34,10 @@ function patientOptions(){
 }
 function doctorOptions(){
   const doctors=read(DOCTORS_KEY);
-  return `<option value="">Não vincular</option>${doctors.map((d,i)=>`<option value="${i}">${esc(d.name)}${d.identifier?` · ${esc(d.identifier)}`:''}</option>`).join('')}`;
+  return `<option value="">Selecione um médico</option>${doctors.map((d,i)=>{
+    const identifier=String(d.identifier||'').trim();
+    return `<option value="${i}" ${identifier?'':'disabled'}>${esc(d.name)}${identifier?` · ${esc(identifier)}`:' · sem identificação profissional'}</option>`;
+  }).join('')}`;
 }
 
 async function init(){
@@ -49,9 +52,10 @@ async function init(){
 function renderPage(){
   const studyHtml=loadedStudies.length?loadedStudies.map((s,i)=>{
     const checked=(s.studyId===activeStudyId)||(!activeStudyId&&i===0);
+    const cap=s.capabilities||{},scale=s.expressionTransform?.inputLabel||'—',wbc=s.clinicalUnits?.wbc?.label||'não confirmada';
     return `<label class="patient-study-choice">
       <input type="checkbox" class="patient-study" value="${esc(s.studyId)}" ${checked?'checked':''}>
-      <span><strong>${esc(s.studyName)}</strong><small>${esc(s.studyId)} · ${s.nPatients||0} pacientes · ${s.nAnalysisSamples||0} amostras expressão</small></span>
+      <span><strong>${esc(s.studyName)}</strong><small>${esc(s.studyId)} · ${s.nPatients||0} pacientes basais · expressão: ${cap.expression?'disponível':'indisponível'} (${esc(scale)}) · mutação: ${cap.mutation?'disponível':'indisponível'} · OS: ${cap.survival?'disponível':'indisponível'} · WBC: ${esc(wbc)}</small></span>
       ${s.studyId===activeStudyId?'<em>ATIVO</em>':''}
     </label>`;
   }).join(''):`<div class="patient-study-empty"><i class="fa-solid fa-database"></i><div><strong>Nenhum estudo LLA está carregado neste navegador.</strong><p>Antes da análise do paciente, carregue pelo menos uma coorte em “Estudos & Gráficos”.</p><a href="resultados.html" class="btn btn-primary btn-sm">Carregar estudo</a></div></div>`;
@@ -62,10 +66,10 @@ function renderPage(){
     return `<div class="patient-biomarker-row" data-gene-row="${esc(g.id)}">
       <label class="patient-gene-toggle"><input type="checkbox" class="patient-gene" value="${esc(g.id)}" ${checked?'checked':''}><span><strong>${esc(g.name)}</strong><small>${esc(g.desc)}</small></span></label>
       <div class="form-group">
-        <label class="form-label">${isFusion?'Status da fusão':'Alteração genética'}</label>
+        <label class="form-label">${isFusion?'Status da fusão':'Mutação somática'}</label>
         ${isFusion
           ? '<div class="form-input patient-readonly-field"><i class="fa-solid fa-link"></i> Use o campo BCR-ABL1 da etapa 2</div><select class="patient-alteration" data-gene="BCR-ABL1" hidden disabled><option value="nao_informado" selected>Não informado</option></select>'
-          : `<select class="form-select patient-alteration" data-gene="${esc(g.id)}"><option value="nao_informado">Não informado</option><option value="presente">Alteração detectada</option><option value="ausente">Sem alteração detectada</option></select>`}
+          : `<select class="form-select patient-alteration" data-gene="${esc(g.id)}"><option value="nao_informado">Não informado</option><option value="presente">Mutação detectada</option><option value="ausente">Mutação não detectada</option></select>`}
       </div>
       <div class="form-group">
         <label class="form-label">Expressão</label>
@@ -106,18 +110,18 @@ function renderPage(){
         <div class="form-grid mt-4">
           <div class="form-group"><label class="form-label">Identificador do caso *</label><input class="form-input" id="p-id" placeholder="Ex.: LLA-001"></div>
           <div class="form-group"><label class="form-label">Nome/apelido</label><input class="form-input" id="p-name" placeholder="Opcional"></div>
-          <div class="form-group"><label class="form-label">Profissional responsável</label><select class="form-select" id="p-doctor">${doctorOptions()}</select></div>
+          <div class="form-group"><label class="form-label" for="p-doctor">Médico responsável *</label><select class="form-select" id="p-doctor" required aria-required="true">${doctorOptions()}</select><small class="form-help">Obrigatório para salvar ou executar a análise. O médico precisa ter CRM/identificação profissional informada.</small></div>
           <div class="form-group"><label class="form-label">Observação</label><input class="form-input" id="p-note" placeholder="Opcional"></div>
         </div>
         <details class="clinical-details mt-4">
-          <summary><i class="fa-solid fa-user-doctor"></i> Cadastrar profissional responsável</summary>
+          <summary><i class="fa-solid fa-user-doctor"></i> Cadastrar médico responsável</summary>
           <div class="form-grid mt-4">
-            <div class="form-group"><label class="form-label">Nome *</label><input class="form-input" id="d-name"></div>
-            <div class="form-group"><label class="form-label">CRM / identificação</label><input class="form-input" id="d-id"></div>
+            <div class="form-group"><label class="form-label" for="d-name">Nome do médico *</label><input class="form-input" id="d-name" required aria-required="true"></div>
+            <div class="form-group"><label class="form-label" for="d-id">CRM / identificação profissional *</label><input class="form-input" id="d-id" required aria-required="true" placeholder="Ex.: CRM-RN 12345"></div>
             <div class="form-group"><label class="form-label">Instituição</label><input class="form-input" id="d-inst"></div>
             <div class="form-group"><label class="form-label">E-mail</label><input class="form-input" id="d-email" type="email"></div>
           </div>
-          <button class="btn btn-secondary mt-3" id="save-doctor" type="button"><i class="fa-solid fa-floppy-disk"></i> Salvar profissional</button>
+          <button class="btn btn-secondary mt-3" id="save-doctor" type="button"><i class="fa-solid fa-floppy-disk"></i> Salvar médico</button>
           <div id="doctor-msg" class="mt-3"></div>
         </details>
         <div id="patient-msg" class="mt-3"></div>
@@ -128,7 +132,7 @@ function renderPage(){
         <div class="form-grid">
           <div class="form-group"><label class="form-label">Idade (anos)</label><input class="form-input" id="p-age" type="number" min="0" max="120" step="0.1"></div>
           <div class="form-group"><label class="form-label">Sexo</label><select class="form-select" id="p-sex"><option value="">Não informado</option><option value="F">Feminino</option><option value="M">Masculino</option></select></div>
-          <div class="form-group"><label class="form-label">Leucócitos / WBC</label><input class="form-input" id="p-wbc" type="number" min="0" step="any" placeholder="Na unidade usada pela coorte"></div>
+          <div class="form-group"><label class="form-label">Leucócitos / WBC</label><input class="form-input" id="p-wbc" type="number" min="0" step="any" placeholder="Opcional"><select class="form-select mt-2" id="p-wbc-unit"><option value="">Unidade não informada</option><option value="x10e9_l">×10⁹/L (ou ×10³/µL)</option><option value="cells_ul">células/µL</option></select><small class="form-help">WBC só entra no pareamento quando a unidade do caso e da coorte podem ser padronizadas.</small></div>
           <div class="form-group"><label class="form-label">Subtipo molecular</label><input class="form-input" id="p-subtype" placeholder="Ex.: Ph-like, ETV6-RUNX1..."></div>
           <div class="form-group"><label class="form-label">BCR-ABL1</label><select class="form-select" id="p-bcr"><option value="nao_informado">Não informado</option><option value="positivo">Positivo</option><option value="negativo">Negativo</option></select></div>
           <div class="form-group"><label class="form-label">Recaída informada</label><select class="form-select" id="p-relapse"><option value="">Não informado</option><option value="nao">Não</option><option value="sim">Sim</option></select></div>
@@ -136,10 +140,11 @@ function renderPage(){
       </section>
 
       <section class="clinical-panel" id="biomarcadores">
-        <div class="clinical-panel__head"><div><span>ETAPA 3</span><h2>Biomarcadores</h2><p>Marque os genes que fazem parte do caso. Alteração e expressão podem ser preenchidas independentemente; campo vazio nunca é tratado como zero.</p></div><i class="fa-solid fa-dna"></i></div>
-        <div class="biomarker-head"><span>Gene</span><span>Alteração</span><span>Expressão</span></div>
+        <div class="clinical-panel__head"><div><span>ETAPA 3</span><h2>Biomarcadores</h2><p>Marque os genes que fazem parte do caso. Mutação somática e expressão podem ser preenchidas independentemente; campo vazio nunca é tratado como zero.</p></div><i class="fa-solid fa-dna"></i></div>
+        <div class="form-group mb-4"><label class="form-label">Escala/unidade dos valores de expressão</label><select class="form-select" id="p-expression-scale"><option value="">Não informada</option><option value="rpkm">RPKM</option><option value="tpm">TPM</option><option value="fpkm">FPKM</option><option value="zscore">z-score</option><option value="original">Outra/não padronizada (registrar, sem comparar)</option></select><small class="form-help">O mesmo valor do paciente só é usado em coortes cuja escala reconhecida seja compatível. Escalas não padronizadas são registradas, mas não entram na classificação Alto/Baixo.</small></div>
+        <div class="biomarker-head"><span>Gene</span><span>Mutação somática</span><span>Expressão</span></div>
         <div class="patient-biomarker-list">${geneRows}</div>
-        <div class="analysis-note mt-4"><strong>Escala de expressão:</strong> use valores compatíveis com o perfil molecular da coorte selecionada. Quando a coorte exige transformação log2(x+1), o GENESIS aplica a mesma transformação ao valor informado antes da comparação.</div>
+        <div class="analysis-note mt-4"><strong>Escala de expressão:</strong> o GENESIS verifica a escala informada antes de comparar o caso. Se a coorte usar outra unidade (por exemplo RPKM versus z-score), o valor do paciente é bloqueado naquela coorte em vez de ser reinterpretado silenciosamente.</div>
       </section>
 
       <section class="clinical-panel" id="coortes">
@@ -150,7 +155,7 @@ function renderPage(){
       </section>
 
       <section class="clinical-panel patient-run-panel" id="executar">
-        <div class="clinical-panel__head"><div><span>ETAPA 5</span><h2>Executar análise</h2><p>O motor usa dados de expressão/mutação disponíveis, Cox univariado, Kaplan–Meier e pareamento heurístico de perfis semelhantes quando os critérios mínimos são atendidos.</p></div><i class="fa-solid fa-microscope"></i></div>
+        <div class="clinical-panel__head"><div><span>ETAPA 5</span><h2>Executar análise</h2><p>O motor usa dados de expressão em escala compatível, mutação somática disponível, Cox univariado, Kaplan–Meier e pareamento heurístico de perfis semelhantes quando os critérios mínimos são atendidos.</p></div><i class="fa-solid fa-microscope"></i></div>
         <div class="patient-consent-note"><i class="fa-solid fa-circle-info"></i><p><strong>Interpretação correta:</strong> “favorável”, “desfavorável” ou “misto” descreve a direção das associações exploratórias nas coortes de referência. Não significa diagnóstico, estágio da doença ou probabilidade individual de sobrevivência.</p></div>
         <div class="analysis-actions mt-5">
           <button class="btn btn-primary btn-lg" id="run-patient-analysis" ${loadedStudies.length?'':'disabled'}><i class="fa-solid fa-play"></i> Analisar paciente</button>
@@ -200,6 +205,8 @@ function loadSavedPatient(e){
   document.getElementById('p-age').value=p.age??'';
   document.getElementById('p-sex').value=normalizeSex(p.sex);
   document.getElementById('p-wbc').value=p.wbc??'';
+  document.getElementById('p-wbc-unit').value=p.wbcUnit||'';
+  document.getElementById('p-expression-scale').value=p.expressionScale||'';
   document.getElementById('p-subtype').value=p.subtype||'';
   document.getElementById('p-note').value=p.note||'';
   document.getElementById('p-bcr').value=['positivo','negativo'].includes(p.bcrAbl1)?p.bcrAbl1:'nao_informado';
@@ -232,10 +239,12 @@ function normalizeSex(v){
 
 function saveDoctor(){
   const name=document.getElementById('d-name')?.value.trim();
-  if(!name)return showMessage('doctor-msg','Informe o nome do profissional.','warning');
+  const identifier=document.getElementById('d-id')?.value.trim();
+  if(!name)return showMessage('doctor-msg','Informe o nome do médico.','warning');
+  if(!identifier)return showMessage('doctor-msg','Informe o CRM ou outra identificação profissional do médico.','warning');
   const obj={
     name,
-    identifier:document.getElementById('d-id')?.value.trim()||'',
+    identifier,
     institution:document.getElementById('d-inst')?.value.trim()||'',
     email:document.getElementById('d-email')?.value.trim()||'',
     createdAt:new Date().toISOString()
@@ -249,7 +258,7 @@ function saveDoctor(){
     select.value='0';
   }
   ['d-name','d-id','d-inst','d-email'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  showMessage('doctor-msg','Profissional salvo localmente e vinculado ao caso.','success');
+  showMessage('doctor-msg','Médico salvo localmente e vinculado ao caso.','success');
 }
 
 function savePatient(){
@@ -257,6 +266,8 @@ function savePatient(){
   if(!id)return showMessage('patient-msg','Informe o identificador do caso antes de salvar.','warning');
   const doctorIdx=document.getElementById('p-doctor').value;
   const doctor=doctorIdx===''?null:read(DOCTORS_KEY)[Number(doctorIdx)]||null;
+  if(!doctor)return showMessage('patient-msg','Selecione o médico responsável antes de salvar.','warning');
+  if(!String(doctor.identifier||'').trim())return showMessage('patient-msg','O médico selecionado não possui CRM/identificação profissional. Cadastre um médico com identificação profissional informada.','warning');
   const genes=[...document.querySelectorAll('.patient-gene:checked')].map(x=>x.value);
   const alterations={},expression={};
   for(const gene of genes){
@@ -272,12 +283,14 @@ function savePatient(){
     age:finiteOrNull(document.getElementById('p-age').value),
     sex:document.getElementById('p-sex').value,
     wbc:finiteOrNull(document.getElementById('p-wbc').value),
+    wbcUnit:document.getElementById('p-wbc-unit').value,
+    expressionScale:document.getElementById('p-expression-scale').value,
     subtype:document.getElementById('p-subtype').value.trim(),
     note:document.getElementById('p-note').value.trim(),
     bcrAbl1:document.getElementById('p-bcr').value,
     relapse:relapse===''?null:relapse==='sim',
     doctorRef:doctor?{name:doctor.name,identifier:doctor.identifier||'',institution:doctor.institution||''}:null,
-    genes,alterations,expression,
+    genes,alterations,mutacoesSomaticas:alterations,expression,
     updatedAt:new Date().toISOString()
   };
   const arr=read(PATIENTS_KEY);
@@ -314,22 +327,32 @@ function buildPayload(){
     const value=finiteOrNull(raw);
     if(value!=null)expressao[gene]=value;
   }
+  const expressionScale=document.getElementById('p-expression-scale').value;
+  if(Object.keys(expressao).length&&!expressionScale)throw new Error('Informe a escala/unidade dos valores de expressão do paciente (RPKM, TPM, FPKM, z-score ou outra escala não padronizada).');
+  const wbcValue=finiteOrNull(document.getElementById('p-wbc').value);
+  const wbcUnit=document.getElementById('p-wbc-unit').value;
+  if(wbcValue!=null&&!wbcUnit)throw new Error('Informe a unidade do valor de leucócitos/WBC para evitar comparação entre escalas incompatíveis.');
   const relapse=document.getElementById('p-relapse').value;
   const doctorIdx=document.getElementById('p-doctor').value;
   const doctor=doctorIdx===''?null:read(DOCTORS_KEY)[Number(doctorIdx)]||null;
+  if(!doctor)throw new Error('Selecione o médico responsável para prosseguir.');
+  if(!String(doctor.identifier||'').trim())throw new Error('O médico selecionado não possui CRM/identificação profissional. Cadastre um médico com identificação profissional informada para prosseguir.');
   return {
     id,
     nome:document.getElementById('p-name').value.trim(),
     idade:finiteOrNull(document.getElementById('p-age').value),
     sexo:document.getElementById('p-sex').value,
-    leucocitos:finiteOrNull(document.getElementById('p-wbc').value),
+    leucocitos:wbcValue,
+    unidadeLeucocitos:wbcUnit,
     subtipoMolecular:document.getElementById('p-subtype').value.trim(),
     observacao:document.getElementById('p-note').value.trim(),
     recaida:relapse===''?null:relapse==='sim',
     profissional:doctor?{name:doctor.name,identifier:doctor.identifier||'',institution:doctor.institution||''}:null,
     biomarcadores:genes,
     alteracoes,
+    mutacoesSomaticas:alteracoes,
     expressao,
+    escalaExpressao:expressionScale,
     fusoes:{'BCR-ABL1':document.getElementById('p-bcr').value},
     studyIds
   };
@@ -390,9 +413,10 @@ function renderResult(r){
   const evidenceRows=(r.evidencias||[]).map(ev=>{
     const [cls,label]=signalLabel(ev);
     const c=ev.cox;
+    const position=ev.patientExpression!=null?`${nfmt(ev.patientExpression,3)}${ev.patientGroup?` · ${esc(ev.patientGroup)}`:''}${ev.referencePosition?`<br><span class="cohort-reference ${ev.referencePosition.startsWith('Dentro')?'within':'outside'}">${esc(ev.referencePosition)}</span>`:''}${ev.q25!=null&&ev.q75!=null?`<br><small>Q25–Q75: ${nfmt(ev.q25,3)}–${nfmt(ev.q75,3)}</small>`:''}`:ev.patientExpressionRaw!=null&&ev.support?.scaleBlocked?`<span class="cohort-reference outside">Expressão não comparada</span><br><small>${ev.support.scaleBlocked} coorte(s) com escala incompatível/não confirmada</small>`:'Não informado';
     return `<tr>
       <td><strong>${esc(ev.gene)}</strong><br><span class="signal ${cls}">${label}</span></td>
-      <td>${ev.patientExpression!=null?`${nfmt(ev.patientExpression,3)}${ev.patientGroup?` · ${esc(ev.patientGroup)}`:''}${ev.referencePosition?`<br><span class="cohort-reference ${ev.referencePosition.startsWith('Dentro')?'within':'outside'}">${esc(ev.referencePosition)}</span>`:''}${ev.q25!=null&&ev.q75!=null?`<br><small>Q25–Q75: ${nfmt(ev.q25,3)}–${nfmt(ev.q75,3)}</small>`:''}`:'Não informado'}</td>
+      <td>${position}</td>
       <td>${c?`HR ${nfmt(c.HR,3)}<br><small>IC95% ${nfmt(c.HR_lower,3)}–${nfmt(c.HR_upper,3)}</small>`:'—'}</td>
       <td>${c?`p ${formatP(c.p_value)}<br><small>FDR ${formatP(c.q_value)}</small>`:'—'}</td>
       <td><span class="quality-badge ${qualityClass(ev.reliability?.score||0)}">${esc(ev.reliability?.label||'—')} · ${ev.reliability?.score||0}/100</span></td>
@@ -404,6 +428,7 @@ function renderResult(r){
     const m=s.matched;
     return `<article class="matched-study-card">
       <div class="matched-study-card__head"><div><span>COORTE ${i+1}</span><h3>${esc(s.studyName)}</h3><small>${esc(s.studyId)}</small></div><span class="quality-badge ${qualityClass(s.dataQuality?.score||0)}">${esc(s.dataQuality?.label||'—')} · ${s.dataQuality?.score||0}/100</span></div>
+      ${s.expressionCompatibility&&!s.expressionCompatibility.compatible&&Object.keys(r.expressao||{}).length?`<div class="alert warning compact"><strong>Expressão do caso não usada nesta coorte:</strong> ${esc(s.expressionCompatibility.reason)}</div>`:''}
       ${m?.available?`<div class="matched-summary"><div><span>Perfis semelhantes</span><strong>${m.nMatched}</strong></div><div><span>Eventos</span><strong>${m.nEvents}</strong></div><div><span>Similaridade mediana</span><strong>${nfmt(m.medianSimilarity,1)}/100</strong></div><div><span>Força</span><strong>${esc(m.strength)}</strong></div></div><div class="chart-wrap patient-result-km"><canvas id="patient-km-${i}"></canvas></div>${patientMatchedGraphReport(s)}<p class="chart-note">${esc(m.note||'')}</p>`:`<div class="empty-science compact">${esc(m?.reason||'Não foi possível formar grupo de perfis semelhantes nesta coorte.')}</div>`}
     </article>`;
   }).join('');
@@ -498,6 +523,7 @@ function resetForm(){
   document.querySelectorAll('#caso select,#clinica select').forEach(x=>x.selectedIndex=0);
   document.querySelectorAll('.patient-alteration').forEach(x=>x.value='nao_informado');
   document.querySelectorAll('.patient-expression').forEach(x=>x.value='');
+  const exprScale=document.getElementById('p-expression-scale');if(exprScale)exprScale.value='';
   document.querySelectorAll('.patient-gene').forEach(x=>{x.checked=DEFAULT_GENES.has(x.value);syncGeneRow(x);});
   const saved=document.getElementById('saved-patient');if(saved)saved.value='';
   lastResult=null;destroyCharts();document.getElementById('patient-analysis-output').innerHTML='';clearMessage('analysis-progress');clearMessage('patient-msg');

@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { clinicalAgeYears } from './clinical-utils.js';
 const cache = new Map();
 const toNum = (v) => { const x = parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(x) ? x : NaN; };
 
@@ -30,8 +31,7 @@ export function summarizeClinical(rows) {
     firstEvent[event] = (firstEvent[event] || 0) + 1;
     const sx = String(row.SEX || row.GENDER || 'Não informado');
     sex[sx] = (sex[sx] || 0) + 1;
-    let age = toNum(row.AGE);
-    if (!Number.isFinite(age)) { const d = toNum(row.AGE_IN_DAYS); if (Number.isFinite(d)) age = d / 365.25; }
+    const age = clinicalAgeYears(row);
     if (Number.isFinite(age)) {
       if (age <= 4) ageGroups['0–4']++; else if (age <= 9) ageGroups['5–9']++; else if (age <= 14) ageGroups['10–14']++; else if (age <= 19) ageGroups['15–19']++; else ageGroups['20+']++;
     }

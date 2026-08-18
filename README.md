@@ -1,28 +1,28 @@
-# GENESIS LLA V10.5 — interface médica + correções do Top 30
+# GENESIS LLA V10.7.6 — endurecimento científico e revisão do orientador
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
-## Fluxo da V10.5
+## Fluxo atual
 
-- **Análise do Paciente**: entrada de identificação, idade, sexo, leucócitos, subtipo, BCR-ABL1, alterações genéticas e expressão. O caso pode ser comparado com 1–5 coortes já carregadas.
+- **Análise do Paciente**: entrada de identificação, idade, sexo, leucócitos, subtipo, BCR-ABL1, mutações somáticas e expressão com escala informada. O caso pode ser comparado com 1–5 coortes já carregadas.
 - **Estudos & Gráficos**: seleção/carregamento de estudos LLA e geração de Top 30 mutacional, heatmap, Kaplan–Meier, Cox, DEA e Volcano conforme a disponibilidade e os critérios mínimos.
 - **Histórico**: mantém separadas as análises de pacientes e os gráficos de coortes produzidos no navegador.
-- **Resultado validado no R**: permanece separado dos cálculos exploratórios locais para evitar confundir validação numérica com resultado ainda não conferido.
+- **Resultados do R**: permanecem separados dos cálculos exploratórios locais e exibem diretamente as saídas fornecidas pelo roteiro R do professor.
 - **Sobre o Projeto**: objetivo, autores, metodologia e limites científicos.
 
 ## Módulo do paciente
 
-A V10.5 mantém o fluxo de caso individual reativado na V10.4 que havia sido removido na simplificação da V10:
+O módulo de caso individual segue o fluxo abaixo:
 
 1. o usuário seleciona um paciente salvo ou cria um novo caso;
 2. informa critérios clínicos disponíveis;
-3. seleciona biomarcadores e registra alteração presente/ausente e/ou expressão;
+3. seleciona biomarcadores e registra mutação somática presente/ausente e/ou expressão;
 4. seleciona 1–5 coortes LLA já carregadas;
 5. o motor executa as análises disponíveis em cada estudo separadamente;
 6. o sistema gera uma síntese exploratória, tabela de evidências, qualidade técnica e curvas dos grupos de perfis semelhantes quando houver dados suficientes;
 7. relatório TXT, JSON auditável e impressão/PDF podem ser exportados.
 
-O cadastro salvo preserva os dados clínicos, profissional, genes, alterações, expressão, BCR-ABL1 e recaída. A expressão não informada permanece ausente e **nunca é convertida em zero**. A mesma regra foi corrigida também no pareamento por idade/leucócitos: campos clínicos vazios não são interpretados como valor 0.
+O cadastro salvo preserva os dados clínicos, médico responsável, genes, mutações somáticas, expressão e respectivas unidades, BCR-ABL1 e recaída. O médico responsável e seu CRM/identificação profissional são obrigatórios para salvar o caso e para executar a análise. A expressão não informada permanece ausente e **nunca é convertida em zero**. A mesma regra foi corrigida também no pareamento por idade/leucócitos: campos clínicos vazios não são interpretados como valor 0.
 
 ## Regra de validação
 
@@ -42,13 +42,13 @@ O cadastro salvo preserva os dados clínicos, profissional, genes, alterações,
 - DEA/Volcano permanecem bloqueados no escopo molecular parcial tanto na interface quanto no motor interno, preservando o universo de testes/FDR.
 - Pareamento de perfis semelhantes exige pelo menos dois critérios por candidato, 20 candidatos comparáveis e 5 eventos no grupo semelhante antes de exibir curva.
 - Valores moleculares nulos não viram zero.
-- Em TARGET, expressão/sobrevida/paciente priorizam amostra basal por paciente e excluem recaída/xenoenxerto/normal quando identificável.
+- Em TARGET, a análise basal por paciente prioriza amostra primária e exclui recaída/xenoenxerto/normal quando identificável. O modo compatível com a referência R usa separadamente o universo de amostras de expressão do procedimento de referência; equivalência numérica integral depende da matriz bruta original.
 - Para mutações, o Top 30 usa todas as amostras do case list mutacional perfilado; a seleção basal fica armazenada em um agregado separado para heatmap/pareamento.
-- `DATA_VERSION=8` impede reutilização de cache antigo em que o Top 30 podia herdar o denominador basal.
+- `DATA_VERSION=10` invalida caches antigos após a correção que acopla explicitamente o perfil molecular de expressão ao case list correspondente.
 
 ## Interface e deploy
 
-A V10.5 mantém a identidade visual mais próxima de software médico: tema claro como padrão, tons clínicos verde-azulados, navegação separando paciente e coortes, avisos metodológicos visíveis e layout responsivo.
+A interface mantém tema claro como padrão, tons clínicos verde-azulados, navegação separando caso e coortes, avisos metodológicos visíveis e layout responsivo. A página inicial foi simplificada na V10.7.5: contadores, fluxo em cartões e blocos informativos redundantes foram removidos a pedido do orientador.
 
 O Vite usa `base: './'`, permitindo publicar em GitHub Pages independentemente do nome do repositório. Todas as rotas têm fallback de inicialização para substituir a antiga tela preta por uma mensagem de erro diagnosticável. O workflow executa testes antes do build.
 
@@ -81,5 +81,9 @@ A V10.7 adiciona o **GENESIS-R — Estudo de Validação TARGET ALL**. Diferente
 Arquivos incorporados: Top 30 mutacional, DEA Relapse vs None, dados clínicos, Cox univariado, Cox multivariado, 10 Kaplan–Meier, Forest Plot de referência e o script R correspondente. A interface identifica a procedência de cada saída e não trata imagens do R como cálculos refeitos no navegador.
 
 
-## V10.7 — Sobrevida compatível com R
-No TARGET ALL, KM/Cox oferecem modo **Compatibilidade R**, que replica o universo de amostras de expressão do pipeline R e mantém o modo basal por paciente como alternativa.
+## V10.7.6 — Sobrevida, escalas e denominadores
+No TARGET ALL, KM/Cox podem usar o **Modo compatível com referência R**, que segue o universo/alinhamento do procedimento de referência sem afirmar reprodução numérica integral sem os dados brutos originais. Essas contagens representam observações de amostras alinhadas ao clínico e não devem ser chamadas automaticamente de pacientes únicos. O modo **Basal por paciente** permanece como análise alternativa deduplicada.
+
+A V10.7.5 também corrige um risco de denominador: o TARGET possui case lists de expressão diferentes para RNA-seq e microarray. O GENESIS agora escolhe o case list de acordo com o perfil molecular selecionado (por exemplo, RPKM/RNA-seq com o case list RNA-seq), em vez de aceitar o primeiro case list de expressão encontrado.
+
+O gráfico auxiliar de eventos observados × esperados foi retirado da interface Kaplan–Meier; o teste log-rank continua calculado e apresentado por χ² e p-value, e O/E continuam disponíveis no JSON auditável.

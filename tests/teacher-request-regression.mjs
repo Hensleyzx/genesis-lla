@@ -13,7 +13,7 @@ assert.ok(!resultados.includes("rgba(155,89,182,.72)"),'O antigo Top 30 roxo nã
 assert.match(resultados,/selectedmut/,'Genes selecionados precisam ter gráfico de frequência mutacional');
 assert.match(resultados,/Valor de referência/,'A interface deve explicar o valor de referência sem chamá-lo de normal clínico');
 
-assert.match(datapack,/const DATA_VERSION = 9/,'Cache precisa ser invalidado após mudar o denominador');
+assert.match(datapack,/const DATA_VERSION = 11/,'Cache precisa ser invalidado após mudar o denominador');
 assert.match(datapack,/mutationProfileSampleIds=\[\.\.\.mutSampleIds\]/,'Top 30 deve usar o case list mutacional completo');
 assert.match(datapack,/PROFILED_MUTATION_CASE_LIST/,'Política do denominador mutacional deve ficar registrada');
 assert.match(datapack,/mutations\.basal=aggregateMutations/,'A seleção basal deve continuar disponível separadamente');
