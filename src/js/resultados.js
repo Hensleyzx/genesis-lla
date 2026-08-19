@@ -21,6 +21,7 @@ let analytics = null;
 let charts = [];
 let customGenes = [];
 let rReference = null;
+let coxRReference = [];
 
 content.innerHTML = `
 ${warningBanner()}
@@ -51,7 +52,7 @@ ${warningBanner()}
   <div class="genesis-r-preview-grid mt-4">
     <div><strong>Top 30</strong><span>NRAS 10,7% · KRAS 5,3%</span></div>
     <div><strong>DEA</strong><span>23.405 genes no CSV</span></div>
-    <div><strong>Cox</strong><span>10 uni · 9 multi</span></div>
+    <div><strong>Cox</strong><span>10 uni · 9 multi no GENESIS-R</span></div>
     <div><strong>Kaplan–Meier</strong><span>10 curvas da saída R</span></div>
   </div>
   <p class="chart-note mt-3">O GENESIS-R é separado das coortes exploratórias abaixo para impedir que resultados recalculados no navegador sejam confundidos com as saídas fornecidas pelo R.</p>
@@ -66,6 +67,7 @@ ${warningBanner()}
 `;
 
 rReference = await loadRReference();
+coxRReference = await loadCoxRReference();
 await renderStudyManager('#study-manager', { simple: true, onReady: async () => { await refreshWorkspace(); } });
 await refreshWorkspace();
 window.addEventListener('genesis:themechange', () => { if (dp) renderGeneratedGraphs(true); });
@@ -121,7 +123,7 @@ function renderWorkspace(top10) {
     </div>
     <div id="gene-msg" class="mt-3"></div>
     <div class="gene-generate-bar mt-4">
-      <div><strong>Genes escolhidos?</strong><small>Gera imediatamente a frequência mutacional de referência e, quando houver dados suficientes, Cox e Kaplan–Meier.</small></div>
+      <div><strong>Genes escolhidos?</strong><small>Gera a frequência mutacional e Kaplan–Meier dos genes escolhidos. No TARGET ALL com Referência R ativa, o Cox usa o CSV fixo do professor; no modo Basal ele é recalculado para os genes selecionados.</small></div>
       <button class="btn btn-primary btn-lg" id="generate-gene-graphs"><i class="fa-solid fa-chart-line"></i> Gerar gráficos</button>
     </div>
   </div>
@@ -130,7 +132,7 @@ function renderWorkspace(top10) {
     <div class="section-route"><span>3</span><div><strong>Escolher quais gráficos gerar</strong><small>Nenhum gráfico é executado automaticamente. O usuário solicita somente o que quer visualizar.</small></div></div>
     <div class="survival-mode-box mt-4">
       <div><strong>Modo de sobrevida (KM/Cox)</strong><small>No TARGET ALL, o modo compatível com referência R é o padrão para comparar a estrutura das figuras fornecidas. O modo basal permanece disponível como análise alternativa deduplicada por paciente.</small></div>
-      <label><input type="radio" name="survival-mode" value="r" ${p.studyId===DEFAULT_LLA_STUDY?'checked':''} ${!(p.nRCompatibleSamples||p.nRnaSamples)?'disabled':''}> <span><b>Modo compatível com referência R</b><small>Segue o alinhamento de amostras e a imputação por mediana do procedimento de referência. A equivalência numérica integral com as figuras originais depende da matriz bruta original; n representa observações de amostra, não necessariamente pacientes únicos.</small></span></label>
+      <label><input type="radio" name="survival-mode" value="r" ${p.studyId===DEFAULT_LLA_STUDY?'checked':''} ${!(p.nRCompatibleSamples||p.nRnaSamples)?'disabled':''}> <span><b>Referência R do professor</b><small>No TARGET ALL, o Forest Plot de Cox usa diretamente o CSV fornecido pelo professor, preservando genes, HR, IC95% e p-value. Kaplan–Meier continua no modo compatível com o alinhamento de amostras do procedimento de referência; nesse caso, n representa observações de amostra, não necessariamente pacientes únicos, e a equivalência numérica integral das curvas depende da matriz bruta original.</small></span></label>
       <label><input type="radio" name="survival-mode" value="basal" ${p.studyId!==DEFAULT_LLA_STUDY?'checked':''}> <span><b>Basal por paciente (alternativa)</b><small>Uma amostra primária por paciente; evita duplicação de indivíduos e pode produzir um n diferente da figura R original.</small></span></label>
     </div>
     <div class="graph-choice-grid mt-4">
@@ -140,7 +142,7 @@ function renderWorkspace(top10) {
       ${graphChoice('mutheat','Oncoprint mutacional basal — Top 30','Matriz binária gene × amostra basal. É um gráfico de mutações e NÃO é o heatmap demográfico solicitado pelo professor.')}
       ${graphChoice('degs','Top DEGs — Relapse vs None', dp.pack.scope==='completo' ? 'DEA exploratória em escopo completo. Ainda não é limma/R validado.' : 'Exige escopo Completo para evitar FDR/DEGs calculados sobre painel parcial.', dp.pack.scope!=='completo')}
       ${graphChoice('volcano','Volcano Plot', dp.pack.scope==='completo' ? 'Usa a mesma DEA exploratória completa; validação final depende da saída R corrigida.' : 'Exige escopo Completo; no modo Expresso faltam genes para reproduzir a análise transcriptômica.', dp.pack.scope!=='completo')}
-      ${graphChoice('cox','Forest Plot — Cox univariado','Roda somente os genes selecionados acima; HR por 1 DP de expressão.')}
+      ${graphChoice('cox','Forest Plot — Cox univariado', p.studyId===DEFAULT_LLA_STUDY ? 'No modo Referência R, usa exatamente cox_univariado_top10_genes.csv do professor; no modo Basal, recalcula apenas os genes selecionados.' : 'Exploratório local: roda somente os genes selecionados acima; HR por 1 DP de expressão.')}
       ${graphChoice('km','Kaplan-Meier por gene','Gera uma curva separada para cada gene selecionado, dividindo expressão pela mediana.')}
     </div>
     <div class="flex gap-2 mt-4" style="flex-wrap:wrap">
@@ -174,6 +176,36 @@ async function loadRReference() {
   } catch {
     return null;
   }
+}
+
+async function loadCoxRReference() {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}data/r_validated/cox_univariado_top10_genes.csv`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(x => x.replace(/^"|"$/g,'').trim());
+    const rows = lines.slice(1).map(line => {
+      const cells = line.split(',').map(x => x.replace(/^"|"$/g,'').trim());
+      const row = Object.fromEntries(headers.map((h,i)=>[h,cells[i] ?? '']));
+      return {
+        Gene: String(row.Gene || '').toUpperCase(),
+        HR: Number(row.HR),
+        HR_lower: Number(row.HR_lower),
+        HR_upper: Number(row.HR_upper),
+        p_value: Number(row.p_value),
+        p_signif: row.p_signif || ''
+      };
+    }).filter(r => r.Gene && Number.isFinite(r.HR) && Number.isFinite(r.HR_lower) && Number.isFinite(r.HR_upper) && Number.isFinite(r.p_value));
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+function hasExactCoxRReference() {
+  return dp?.pack?.studyId === DEFAULT_LLA_STUDY && selectedSurvivalMode() === 'r' && coxRReference.length > 0;
 }
 
 function selectedGenes() {
@@ -237,7 +269,7 @@ async function renderGeneratedGraphs(redrawOnly = false) {
   if (selectedGraphs.includes('mutheat') && drawMutationHeatmap()) rendered.push({title:'Oncoprint mutacional basal — Top 30', genes:[]});
   if (selectedGraphs.includes('degs') && drawDEGs()) rendered.push({title:'Top DEGs — Relapse vs None', genes:[]});
   if (selectedGraphs.includes('volcano') && drawVolcano()) rendered.push({title:'Volcano Plot — Relapse vs None', genes:[]});
-  if (selectedGraphs.includes('cox') && drawCox(genes)) rendered.push({title:'Forest Plot — Cox univariado', genes});
+  if (selectedGraphs.includes('cox') && drawCox(genes)) rendered.push({title:'Forest Plot — Cox univariado', genes:hasExactCoxRReference()?coxRReference.map(r=>r.Gene):genes, status:hasExactCoxRReference()?'referência R do professor':'exploratório local'});
   if (selectedGraphs.includes('km')) for (const g of genes) if (drawKM(g)) rendered.push({title:`Kaplan-Meier — ${g}`, genes:[g]});
 
   if (!redrawOnly) {
@@ -252,6 +284,10 @@ function statusHeader(extra='') {
 
 function validatedStatusHeader(extra='') {
   return `<div class="validated-result-head"><span class="quality-badge high"><i class="fa-solid fa-shield-heart"></i> VALIDADO CONTRA R</span><span class="study-pill">TARGET ALL</span><span class="study-pill">n=150</span>${extra}</div>`;
+}
+
+function coxRReferenceHeader(extra='') {
+  return `<div class="validated-result-head"><span class="quality-badge high"><i class="fa-solid fa-shield-heart"></i> REFERÊNCIA R DO PROFESSOR</span><span class="study-pill">TARGET ALL</span><span class="study-pill">CSV original · 9 modelos</span>${extra}</div>`;
 }
 
 
@@ -445,11 +481,15 @@ function volcanoCard() {
 }
 
 function coxCard(genes) {
+  if (hasExactCoxRReference()) {
+    const refGenes=coxRReference.map(r=>r.Gene);
+    return `<div class="card result-graph-card">${coxRReferenceHeader(`<span class="study-pill">genes: ${refGenes.map(esc).join(', ')}</span><span class="study-pill">OS · OS_MONTHS</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Reprodução da referência do professor. Os pontos, intervalos e p-values abaixo são lidos diretamente de <strong>cox_univariado_top10_genes.csv</strong>; por isso este modo não substitui NOTCH2 por TAS2R19 nem recalcula o conjunto de genes a partir do Top 30 mutacional.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div><details class="r-reference-box mt-4"><summary><strong>Comparar com a figura R original</strong></summary><img src="${import.meta.env.BASE_URL}data/r_validated/fig7_forest_cox.png" alt="Forest Plot Cox univariado original fornecido pelo professor"></details></div>`;
+  }
   const ctx=survivalContextFor(genes);
   const available = ctx.genes;
   const v=ctx.v;
   if (!available.length || !v.endpointAdequate) return noDataCard('Forest Plot — Cox univariado','Endpoint/expressão insuficientes: são necessários pelo menos 20 registros válidos e 5 eventos, além de expressão para o(s) gene(s) selecionado(s).');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Somente os genes escolhidos. HR por +1 DP de expressão; no modo compatível com referência R a escala segue a expressão usada pelo procedimento de referência antes da padronização. IC95% e p são locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução. O teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div></div>`;
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Exploratório local no modo Basal por paciente. Somente os genes escolhidos são recalculados; HR por +1 DP de expressão, com IC95% e p locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução e o teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div></div>`;
 }
 
 function kmCard(gene) {
@@ -554,8 +594,64 @@ function drawVolcano() {
   charts.push(new Chart(el,{type:'scatter',data:{datasets:[{label:'NS',data:ns,backgroundColor:'rgba(133,144,168,.48)',pointRadius:2},{label:'Up',data:up,backgroundColor:'rgba(231,76,60,.78)',pointRadius:3},{label:'Down',data:down,backgroundColor:'rgba(46,127,240,.78)',pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,parsing:false,animation:false,plugins:{legend:{labels:{color:t.text}},tooltip:{callbacks:{label:c=>`${c.raw.gene}: log2FC=${c.raw.x.toFixed(4)} · FDR=${fmtP(c.raw.adjP)}`}}},scales:{x:{ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'log2 Fold Change',color:t.text}},y:{ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'−log10(FDR)',color:t.text}}}},plugins:[thresholdPlugin(.5,-Math.log10(.05))]})); return true;
 }
 
+
+function drawExactCoxRReference(el) {
+  const d=[...coxRReference].filter(r=>r.HR>0&&r.HR_lower>0&&r.HR_upper>0).sort((a,b)=>a.HR-b.HR);
+  if(!d.length)return false;
+  const t=getChartTheme();
+  const points=d.map((r,i)=>({x:r.HR,y:i,gene:r.Gene,lo:r.HR_lower,hi:r.HR_upper,p:r.p_value}));
+  charts.push(new Chart(el,{
+    type:'scatter',
+    data:{datasets:[{
+      data:points,
+      backgroundColor:points.map(p=>p.x>1?'#00BFC4':'#F8766D'),
+      borderColor:points.map(p=>p.x>1?'#00BFC4':'#F8766D'),
+      pointRadius:7,
+      pointHoverRadius:8
+    }]},
+    options:{
+      responsive:true,maintainAspectRatio:false,parsing:false,animation:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{
+          label:c=>`${c.raw.gene}: HR=${c.raw.x.toFixed(3)} · IC95% ${c.raw.lo.toFixed(3)}–${c.raw.hi.toFixed(3)}`,
+          afterLabel:c=>`p=${Number(c.raw.p).toFixed(4)}`
+        }}
+      },
+      scales:{
+        x:{type:'linear',min:Math.max(0,Math.min(...points.map(p=>p.lo))-.08),max:Math.max(...points.map(p=>p.hi))+.08,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'Hazard Ratio (IC 95%)',color:t.text}},
+        y:{min:-.5,max:d.length-.5,ticks:{color:t.text,stepSize:1,callback:v=>Number.isInteger(v)&&d[v]?d[v].Gene:''},grid:{display:false}}
+      }
+    },
+    plugins:[forestCIReferencePlugin()]
+  }));
+  const coxReport=document.getElementById('cox-graph-report');
+  const sig=d.filter(r=>r.p_value<.05);
+  if(coxReport) coxReport.innerHTML=graphReport({
+    title:'Leitura do Forest Plot — referência R',
+    what:'Cada ponto é o Hazard Ratio do modelo Cox univariado fornecido no CSV do professor; a barra horizontal é o IC95% e a linha tracejada marca HR = 1.',
+    finding:`${sig.length} de ${d.length} modelos têm p < 0,05 no CSV de referência. NOTCH2 está presente (HR 1,518; IC95% 1,248–1,845) e TAS2R19 não pertence a esta tabela de Cox.`,
+    caution:'Este cartão exibe a saída de referência fornecida. Não deve ser confundido com o recálculo exploratório local a partir dos genes selecionados.'
+  });
+  const meta=document.getElementById('cox-meta');
+  if(meta) meta.innerHTML=`<div class="table-wrap"><table class="data-table"><thead><tr><th>Gene</th><th>HR</th><th>IC95%</th><th>p</th><th>Significância</th></tr></thead><tbody>${d.slice().reverse().map(r=>`<tr><td><strong>${esc(r.Gene)}</strong></td><td>${r.HR.toFixed(3)}</td><td>${r.HR_lower.toFixed(3)}–${r.HR_upper.toFixed(3)}</td><td>${Number(r.p_value).toFixed(4)}</td><td>${r.p_value<.05?'p < 0,05':'—'}</td></tr>`).join('')}</tbody></table></div><p class="chart-note mt-3">Fonte: cox_univariado_top10_genes.csv fornecido nesta revisão. O arquivo contém 9 modelos. A ordem visual é determinada pelo HR, como no Forest Plot R enviado pelo professor.</p>`;
+  return true;
+}
+
+function forestCIReferencePlugin(){
+  return{id:'genesisForestCIReference',beforeDatasetsDraw(chart){
+    const ds=chart.data.datasets[0],meta=chart.getDatasetMeta(0),x=chart.scales.x,ctx=chart.ctx;
+    ctx.save();ctx.strokeStyle='#1f1f1f';ctx.lineWidth=2;
+    ds.data.forEach((p,i)=>{const el=meta.data[i];if(!el||!Number.isFinite(p.lo)||!Number.isFinite(p.hi))return;const y=el.y,x1=x.getPixelForValue(p.lo),x2=x.getPixelForValue(p.hi);ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();ctx.beginPath();ctx.moveTo(x1,y-6);ctx.lineTo(x1,y+6);ctx.moveTo(x2,y-6);ctx.lineTo(x2,y+6);ctx.stroke();});
+    const one=x.getPixelForValue(1);ctx.setLineDash([7,7]);ctx.strokeStyle=tickReferenceColor();ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(one,chart.chartArea.top);ctx.lineTo(one,chart.chartArea.bottom);ctx.stroke();ctx.restore();
+  }};
+}
+function tickReferenceColor(){return getChartTheme().muted||'#555';}
+
 function drawCox(genes) {
-  const el=document.getElementById('result-cox'); if(!el) return false; const x=survivalContextFor(genes),v=x.v; if(!x.genes.length||!v.endpointAdequate) return false;
+  const el=document.getElementById('result-cox'); if(!el) return false;
+  if (hasExactCoxRReference()) return drawExactCoxRReference(el);
+  const x=survivalContextFor(genes),v=x.v; if(!x.genes.length||!v.endpointAdequate) return false;
   let d=coxUnivariate(v.time,v.event,x.genes,x.rows).filter(r=>Number.isFinite(r.HR)&&r.HR>0&&r.HR_lower>0&&r.HR_upper>0);
   if(!d.length){
     if(el.parentElement)el.parentElement.innerHTML='<div class="empty-science">Nenhum gene passou os mínimos do Cox nesta execução (≥20 casos completos, ≥5 eventos, expressão variável e convergência).</div>';

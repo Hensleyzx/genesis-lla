@@ -1,7 +1,7 @@
 {
-  "name": "genesis-lla-v10-7-6-scientific-hardening",
+  "name": "genesis-lla-v10-7-7-cox-r-reference",
   "private": true,
-  "version": "10.7.6",
+  "version": "10.7.7",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1,4 +1,4 @@
-# GENESIS LLA V10.7.6 — endurecimento científico e revisão do orientador
+# GENESIS LLA V10.7.7 — endurecimento científico e revisão do orientador
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
@@ -81,9 +81,13 @@ A V10.7 adiciona o **GENESIS-R — Estudo de Validação TARGET ALL**. Diferente
 Arquivos incorporados: Top 30 mutacional, DEA Relapse vs None, dados clínicos, Cox univariado, Cox multivariado, 10 Kaplan–Meier, Forest Plot de referência e o script R correspondente. A interface identifica a procedência de cada saída e não trata imagens do R como cálculos refeitos no navegador.
 
 
-## V10.7.6 — Sobrevida, escalas e denominadores
+## V10.7.7 — Sobrevida, escalas e denominadores
 No TARGET ALL, KM/Cox podem usar o **Modo compatível com referência R**, que segue o universo/alinhamento do procedimento de referência sem afirmar reprodução numérica integral sem os dados brutos originais. Essas contagens representam observações de amostras alinhadas ao clínico e não devem ser chamadas automaticamente de pacientes únicos. O modo **Basal por paciente** permanece como análise alternativa deduplicada.
 
 A V10.7.5 também corrige um risco de denominador: o TARGET possui case lists de expressão diferentes para RNA-seq e microarray. O GENESIS agora escolhe o case list de acordo com o perfil molecular selecionado (por exemplo, RPKM/RNA-seq com o case list RNA-seq), em vez de aceitar o primeiro case list de expressão encontrado.
 
 O gráfico auxiliar de eventos observados × esperados foi retirado da interface Kaplan–Meier; o teste log-rank continua calculado e apresentado por χ² e p-value, e O/E continuam disponíveis no JSON auditável.
+
+## Correção V10.7.7 — Forest Plot Cox
+
+O Forest Plot de Cox no modo **Referência R do professor** usa diretamente `public/data/r_validated/cox_univariado_top10_genes.csv` e pode ser comparado à figura `fig7_forest_cox.png`. Isso evita misturar o recálculo exploratório dos genes do Top 30 com a tabela Cox de referência.
