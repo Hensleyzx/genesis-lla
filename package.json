@@ -1,7 +1,7 @@
 {
-  "name": "genesis-lla-v10-7-9-orientador-ui",
+  "name": "genesis-lla-v10-7-11-orientador-ui",
   "private": true,
-  "version": "10.7.9",
+  "version": "10.7.11",
   "type": "module",
   "scripts": {
     "dev": "vite",

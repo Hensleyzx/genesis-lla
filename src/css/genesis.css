@@ -2447,28 +2447,6 @@ html[data-theme="light"] .sidebar{background:linear-gradient(180deg,#fbfefe 0%,#
 /* ============================================================
    V10.7.9 — revisão do orientador: fluxo único e resultados por blocos
    ============================================================ */
-.genesis-r-inline-option{
-  display:grid;
-  grid-template-columns:auto minmax(0,1fr) auto;
-  gap:16px;
-  align-items:center;
-  padding:16px;
-  border:1px solid color-mix(in srgb,var(--primary) 24%,var(--border));
-  border-radius:14px;
-  background:linear-gradient(135deg,color-mix(in srgb,var(--primary) 7%,var(--bg-card)),var(--bg-card));
-}
-.genesis-r-inline-option__icon{
-  width:50px;height:50px;border-radius:14px;display:grid;place-items:center;
-  color:#fff;background:linear-gradient(135deg,var(--primary),var(--primary-light));
-  box-shadow:0 10px 24px rgba(11,127,131,.16);font-size:19px;
-}
-.genesis-r-inline-option__body{min-width:0;display:flex;flex-direction:column;gap:4px}
-.genesis-r-inline-option__body>strong{font-size:14px;color:var(--text-primary)}
-.genesis-r-inline-option__body>small{font-size:11px;line-height:1.5;color:var(--text-muted)}
-.study-source-divider{display:flex;align-items:center;gap:12px;color:var(--text-muted);font-size:9px;font-weight:800;letter-spacing:.09em}
-.study-source-divider::before,.study-source-divider::after{content:"";height:1px;background:var(--border);flex:1}
-.study-source-divider span{white-space:nowrap}
-
 .analysis-builder-grid{display:grid;grid-template-columns:minmax(320px,.92fr) minmax(420px,1.08fr);gap:16px;align-items:start}
 .analysis-builder-panel{min-width:0;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--bg-input)}
 .analysis-builder-panel__head{display:flex;flex-direction:column;gap:4px}
@@ -2520,9 +2498,6 @@ html[data-theme="light"] .sidebar{background:linear-gradient(180deg,#fbfefe 0%,#
   .analysis-builder-panel .gene-choice-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:760px){
-  .genesis-r-inline-option{grid-template-columns:auto minmax(0,1fr)}
-  .genesis-r-inline-option>a{grid-column:1/-1;width:100%;justify-content:center}
-  .study-source-divider span{white-space:normal;text-align:center}
   .analysis-builder-panel .gene-choice-grid{grid-template-columns:1fr}
   .analysis-generate-bar{align-items:stretch;flex-direction:column}
   .analysis-generate-bar>div:last-child{display:grid!important;grid-template-columns:1fr}
@@ -2535,3 +2510,30 @@ html[data-theme="light"] .sidebar{background:linear-gradient(180deg,#fbfefe 0%,#
   .result-carousel-toolbar [data-carousel-next]{grid-column:2;grid-row:2}
   .result-carousel-toolbar .btn{width:100%;justify-content:center}
 }
+
+/* V10.7.11 — configuração por tipo de análise: genes aparecem dentro da categoria ativa */
+.analysis-category-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.analysis-category-tab{display:flex;align-items:flex-start;gap:10px;width:100%;padding:13px 14px;border:1px solid var(--border);border-radius:13px;background:var(--bg-input);color:var(--text-secondary);font:inherit;text-align:left;cursor:pointer;transition:border-color .18s ease,background .18s ease,transform .18s ease}
+.analysis-category-tab>i{width:30px;height:30px;display:grid;place-items:center;flex:0 0 auto;border-radius:9px;background:color-mix(in srgb,var(--primary) 8%,var(--bg-card));color:var(--primary);font-size:12px}
+.analysis-category-tab>span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.analysis-category-tab strong{font-size:12px;color:var(--text-primary)}
+.analysis-category-tab small{font-size:9px;line-height:1.35;color:var(--text-muted)}
+.analysis-category-tab:hover{border-color:color-mix(in srgb,var(--primary) 45%,var(--border));transform:translateY(-1px)}
+.analysis-category-tab.is-active{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 9%,var(--bg-card));box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 8%,transparent)}
+.analysis-category-tab.is-active>i{background:var(--primary);color:#fff}
+.analysis-category-panel{padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--bg-input)}
+.analysis-category-panel[hidden]{display:none}
+.analysis-category-panel__head{display:flex;flex-direction:column;gap:4px}
+.analysis-category-panel__head>strong{font-size:14px;color:var(--text-primary)}
+.analysis-category-panel__head>small{font-size:11px;line-height:1.5;color:var(--text-muted)}
+.analysis-gene-picker{padding:14px;border:1px solid color-mix(in srgb,var(--primary) 24%,var(--border));border-radius:13px;background:color-mix(in srgb,var(--primary) 3%,var(--bg-card))}
+.analysis-gene-picker__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.analysis-gene-picker__head>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.analysis-gene-picker__head strong{font-size:12px;color:var(--text-primary)}
+.analysis-gene-picker__head small{font-size:10px;line-height:1.45;color:var(--text-muted)}
+.analysis-gene-picker .gene-choice-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.analysis-category-panel .survival-mode-box{grid-template-columns:1fr;padding:12px;gap:8px}
+.analysis-category-panel .survival-mode-box>div small,.analysis-category-panel .survival-mode-box label small{font-size:10px}
+.analysis-category-panel .survival-mode-box label{padding:10px}
+@media(max-width:1050px){.analysis-category-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.analysis-category-tabs{grid-template-columns:1fr}.analysis-gene-picker__head{flex-direction:column}.analysis-gene-picker .gene-choice-grid{grid-template-columns:1fr}.analysis-gene-picker .custom-gene-add{grid-template-columns:1fr!important}.analysis-gene-picker .custom-gene-add .btn{width:100%;justify-content:center}}

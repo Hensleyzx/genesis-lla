@@ -1,4 +1,4 @@
-# GENESIS LLA V10.7.9 — revisão de interface solicitada pelo orientador
+# GENESIS LLA V10.7.10 — revisão de interface solicitada pelo orientador
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
@@ -111,3 +111,17 @@ O Forest Plot de Cox no modo **Referência R do professor** usa diretamente `pub
 - O fluxo científico, denominadores, referências R, Cox, Kaplan–Meier, heatmap demográfico, Top 30, DEA e Volcano não tiveram suas fórmulas alteradas nesta revisão; a mudança é de organização e navegação da interface.
 - A tela de login/autenticação do médico **não foi implementada nesta versão**, conforme decisão de deixar essa etapa para depois.
 
+
+
+## V10.7.10 — GENESIS-R apenas no menu lateral
+
+A pedido do orientador, o acesso ao **GENESIS-R** foi removido do carregador de estudos em **Estudos & Gráficos**. Essa área agora é dedicada exclusivamente às cinco coortes públicas LLA selecionadas no cBioPortal. O GENESIS-R permanece acessível pela entrada própria **GENESIS-R** no menu lateral, evitando duplicidade de navegação e a impressão de que o estudo de validação é apenas mais uma coorte pública.
+
+Os demais ajustes da V10.7.9 — painel único de genes/gráficos e resultados organizados por blocos com navegação lateral — foram preservados.
+
+
+## V10.7.11 — análises por categoria, sem redundância dos genes
+
+A pedido do orientador, o painel fixo **Genes disponíveis para análise** deixou de ocupar uma coluna separada ao lado dos tipos de gráfico. A configuração agora começa pela categoria **Mutações**, **Sobrevida**, **Perfil demográfico** ou **Expressão diferencial**. Ao abrir **Sobrevida**, por exemplo, os genes aparecem dentro do próprio painel junto das opções Cox/Kaplan–Meier e do modo de sobrevida.
+
+A seleção de biomarcadores é sincronizada entre as categorias que dependem de genes, evitando configurações contraditórias. Expressão diferencial permanece sem seletor manual de genes porque Top DEGs/Volcano trabalham com o conjunto transcriptômico da coorte. A organização dos resultados por blocos e carrosséis da V10.7.9/V10.7.10 foi mantida, e nenhuma fórmula científica foi alterada nesta revisão.
