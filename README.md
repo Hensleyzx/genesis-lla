@@ -1,4 +1,4 @@
-# GENESIS LLA V10.7.7 — endurecimento científico e revisão do orientador
+# GENESIS LLA V10.7.9 — revisão de interface solicitada pelo orientador
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
@@ -44,7 +44,7 @@ O cadastro salvo preserva os dados clínicos, médico responsável, genes, muta�
 - Valores moleculares nulos não viram zero.
 - Em TARGET, a análise basal por paciente prioriza amostra primária e exclui recaída/xenoenxerto/normal quando identificável. O modo compatível com a referência R usa separadamente o universo de amostras de expressão do procedimento de referência; equivalência numérica integral depende da matriz bruta original.
 - Para mutações, o Top 30 usa todas as amostras do case list mutacional perfilado; a seleção basal fica armazenada em um agregado separado para heatmap/pareamento.
-- `DATA_VERSION=10` invalida caches antigos após a correção que acopla explicitamente o perfil molecular de expressão ao case list correspondente.
+- `DATA_VERSION=12` invalida caches antigos após as revisões de acoplamento expressão/case list e da disponibilidade do endpoint de sobrevida.
 
 ## Interface e deploy
 
@@ -91,3 +91,23 @@ O gráfico auxiliar de eventos observados × esperados foi retirado da interface
 ## Correção V10.7.7 — Forest Plot Cox
 
 O Forest Plot de Cox no modo **Referência R do professor** usa diretamente `public/data/r_validated/cox_univariado_top10_genes.csv` e pode ser comparado à figura `fig7_forest_cox.png`. Isso evita misturar o recálculo exploratório dos genes do Top 30 com a tabela Cox de referência.
+
+## V10.7.8 — revisão de prontidão para a feira
+
+- `capabilities.survival` só é verdadeira quando existem **tempo de OS e status/evento**, evitando mostrar sobrevida como disponível com endpoint incompleto.
+- `p=0` arredondado em CSV/saída passa a ser exibido como **p < 0,0001**, sem afirmar probabilidade exatamente zero.
+- A página GENESIS-R identifica explicitamente seu Cox histórico como **análise separada** do Forest Plot de referência enviado pelo professor.
+- A interface usa **mutações somáticas** para o perfil mutacional, evitando confundir mutação com CNA, fusão ou rearranjo.
+- O Forest Plot de referência do professor continua lendo diretamente `public/data/r_validated/cox_univariado_top10_genes.csv` e a figura original correspondente.
+
+## V10.7.9 — fluxo único de estudos e resultados por blocos
+
+- O GENESIS-R foi integrado à mesma área de escolha/carregamento das coortes públicas do cBioPortal; não existe mais um segundo card de estudo acima do carregador principal.
+- A seleção de **genes** e de **tipos de gráfico** foi reunida em um único painel chamado **Montar análise**.
+- Existe apenas **um botão de geração**: `Gerar gráficos selecionados`. A geração automática antiga ligada à seleção de genes foi removida.
+- Os tipos de gráfico são organizados por categoria: **Mutações**, **Sobrevida**, **Perfil demográfico e expressão** e **Expressão diferencial**.
+- Os resultados não são mais apresentados como uma pilha contínua. Cada categoria recebe seu próprio bloco e, quando há múltiplos resultados, o usuário navega por **Anterior**, **Próximo** ou pelo nome do gráfico.
+- Kaplan–Meier continua sendo calculado separadamente por gene; por exemplo, `KM · NRAS`, `KM · KRAS` e `KM · TP53` aparecem como itens independentes dentro do bloco **Sobrevida**.
+- O fluxo científico, denominadores, referências R, Cox, Kaplan–Meier, heatmap demográfico, Top 30, DEA e Volcano não tiveram suas fórmulas alteradas nesta revisão; a mudança é de organização e navegação da interface.
+- A tela de login/autenticação do médico **não foi implementada nesta versão**, conforme decisão de deixar essa etapa para depois.
+

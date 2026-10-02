@@ -2,18 +2,31 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const resultados=fs.readFileSync('src/js/resultados.js','utf8');
+const studyUi=fs.readFileSync('src/js/study-ui.js','utf8');
 const datapack=fs.readFileSync('src/js/datapack.js','utf8');
 const scriptR=fs.readFileSync('public/referencias/Script.R','utf8');
 const scriptValidation=fs.readFileSync('public/referencias/Script_LLA_validacao.R','utf8');
 
-assert.match(resultados,/id="generate-gene-graphs"/,'Botão Gerar gráficos deve ficar junto à seleção de genes');
+assert.ok(!resultados.includes('id="generate-gene-graphs"'),'A interface não deve manter um segundo botão de geração junto aos genes.');
+assert.equal((resultados.match(/id="generate-selected"/g)||[]).length,1,'Genes e tipos de gráfico devem compartilhar um único botão de geração.');
+assert.match(resultados,/Montar análise/,'Genes e gráficos precisam ficar reunidos em um único painel de configuração.');
+assert.match(resultados,/analysis-builder-grid/,'Painel unificado de genes e gráficos ausente.');
+assert.match(resultados,/result-analysis-block/,'Resultados precisam ser separados por blocos de análise.');
+assert.match(resultados,/data-result-carousel/,'Blocos de resultados precisam permitir navegação lateral entre gráficos.');
+assert.match(resultados,/Kaplan-Meier — \$\{g\}/,'Kaplan-Meier deve continuar gerando um gráfico separado por gene.');
+assert.match(resultados,/Sobrevida/,'Bloco de Sobrevida ausente.');
+assert.match(resultados,/Mutações/,'Bloco de Mutações ausente.');
+assert.ok(!resultados.includes('genesis-r-study-card'),'GENESIS-R não deve permanecer como um segundo card de carregamento acima do seletor principal.');
+assert.match(studyUi,/GENESIS-R — TARGET ALL/,'GENESIS-R deve ficar integrado à área única de estudos.');
+assert.match(studyUi,/Abrir GENESIS-R/,'A área única de estudos deve oferecer acesso ao GENESIS-R.');
+assert.match(studyUi,/Coorte pública LLA \(cBioPortal\)/,'A mesma área deve manter o carregamento de coortes públicas.');
 assert.match(resultados,/fig1_top30_genes_R_original\.jpeg/,'Top 30 principal deve usar a figura R oficial');
 assert.match(resultados,/VALIDADO CONTRA R/,'Top 30 oficial precisa estar identificado como validado');
 assert.ok(!resultados.includes("rgba(155,89,182,.72)"),'O antigo Top 30 roxo não pode permanecer');
 assert.match(resultados,/selectedmut/,'Genes selecionados precisam ter gráfico de frequência mutacional');
 assert.match(resultados,/Valor de referência/,'A interface deve explicar o valor de referência sem chamá-lo de normal clínico');
 
-assert.match(datapack,/const DATA_VERSION = 11/,'Cache precisa ser invalidado após mudar o denominador');
+assert.match(datapack,/const DATA_VERSION = 12/,'Cache precisa ser invalidado após mudar o denominador');
 assert.match(datapack,/mutationProfileSampleIds=\[\.\.\.mutSampleIds\]/,'Top 30 deve usar o case list mutacional completo');
 assert.match(datapack,/PROFILED_MUTATION_CASE_LIST/,'Política do denominador mutacional deve ficar registrada');
 assert.match(datapack,/mutations\.basal=aggregateMutations/,'A seleção basal deve continuar disponível separadamente');
@@ -27,4 +40,4 @@ for(const [name,script] of [['Script.R',scriptR],['Script_LLA_validacao.R',scrip
   assert.match(block,/scale_fill_gradient\(low = "#fef0d9", high = "#d7301f"/,`${name}: paleta da figura R deve permanecer vermelho/laranja`);
 }
 
-console.log('GENESIS V10.7 teacher-request regression tests: OK');
+console.log('GENESIS V10.7.9 teacher-request regression tests: OK');

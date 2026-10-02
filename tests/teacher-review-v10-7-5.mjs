@@ -29,7 +29,7 @@ assert.match(resultados,/Log-rank<\/span><strong>χ²=/,'Resumo numérico do log
 assert.match(resultados,/logRank:\{chi2:.*O:s\.logRank\?\.O,E:s\.logRank\?\.E\}/s,'O/E devem permanecer no JSON para auditoria, sem gráfico visual.');
 
 // 4) Cache invalidado porque o acoplamento perfil de expressão <-> case list mudou.
-assert.match(datapack,/const DATA_VERSION = 11/,'Cache antigo deve ser invalidado após corrigir o case list de expressão.');
+assert.match(datapack,/const DATA_VERSION = 12/,'Cache antigo deve ser invalidado após corrigir o case list de expressão.');
 assert.match(datapack,/chooseSampleList\(lists,'rna',resolved\.expression\)/,'Datapack deve escolher o case list usando o perfil molecular selecionado.');
 
 // 5) TARGET tem RNA-seq e microarray; RPKM precisa escolher o case list de RNA-seq.

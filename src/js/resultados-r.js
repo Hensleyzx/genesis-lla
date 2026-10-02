@@ -17,7 +17,7 @@ ${warningBanner()}
   <div>
     <div class="result-hero__label">ESTUDO FIXO · RESULTADOS PRODUZIDOS NO R</div>
     <h1 class="page-title">GENESIS-R — Estudo de Validação TARGET ALL</h1>
-    <p class="page-desc">Painel de validação estatística do GENESIS baseado nos arquivos gerados pelo pipeline R do projeto. Este modo <strong>não substitui os valores do R por cálculos locais</strong>: ele carrega os CSVs fornecidos e apresenta a procedência de cada resultado.</p>
+    <p class="page-desc">Painel de validação estatística do GENESIS baseado nos arquivos gerados pelo pipeline R do projeto. Este modo <strong>não substitui os valores do R por cálculos locais</strong>: ele carrega os CSVs fornecidos e apresenta a procedência de cada resultado. <strong>Importante:</strong> o Cox desta página pertence ao painel prognóstico histórico GENESIS-R e é uma análise diferente do Forest Plot de referência enviado pelo professor (NRAS, KRAS, CREBBP, JAK2, PTPN11, TP53, CDK11A, FLT3 e NOTCH2), que fica em “Estudos exploratórios”.</p>
   </div>
   <a class="btn btn-secondary" href="resultados.html"><i class="fa-solid fa-arrow-left"></i> Estudos exploratórios</a>
 </div>
@@ -26,7 +26,7 @@ ${warningBanner()}
   <div class="genesis-r-launch__icon"><i class="fa-solid fa-flask-vial"></i></div>
   <div>
     <div class="card__title">Pacote de validação disponível</div>
-    <p class="card__subtitle">TARGET ALL · Top 30 · DEA Relapse vs None · Cox univariado/multivariado · Kaplan–Meier · dados clínicos.</p>
+    <p class="card__subtitle">TARGET ALL · Top 30 · DEA Relapse vs None · Cox do painel prognóstico GENESIS-R (análise separada) · Kaplan–Meier · dados clínicos.</p>
     <div class="official-r-badges mt-3">
       <span><i class="fa-brands fa-r-project"></i> Pipeline R</span>
       <span>all_phase2_target_2018_pub</span>
@@ -125,7 +125,7 @@ function rTop30GraphReport() {
     ? `${first.Gene} foi o gene mais frequente (${pct(first.freq_relativa)}; ${first.n_amostras}/150 amostras)${second ? `, seguido de ${second.Gene} (${pct(second.freq_relativa)}; ${second.n_amostras}/150)` : ''}.`
     : 'Não foi possível resumir o ranking.';
   return graphReport({
-    what: 'Ranking das alterações/mutações observadas nas 150 amostras perfiladas do TARGET ALL. Quanto maior a barra, maior a proporção de amostras com alteração naquele gene.',
+    what: 'Ranking das mutações somáticas observadas nas 150 amostras perfiladas do TARGET ALL. Quanto maior a barra, maior a proporção de amostras com pelo menos uma mutação naquele gene.',
     finding,
     caution: 'A frequência descreve esta coorte e não equivale a risco individual, agressividade isolada do gene ou valor clínico normal.',
     source: 'GENESIS-R · dados do R',
@@ -155,7 +155,7 @@ function rCoxUniGraphReport() {
     what: 'Forest Plot do Cox univariado. HR = 1 indica ausência de associação com o hazard; HR abaixo de 1 indica associação com menor hazard e HR acima de 1 com maior hazard, neste modelo.',
     finding,
     caution: 'É associação univariada, sem ajuste simultâneo por outros fatores. p < 0,05 não prova efeito causal nem permite previsão individual de sobrevivência.',
-    source: 'GENESIS-R · Cox do R',
+    source: 'GENESIS-R · Cox do painel prognóstico histórico (análise separada)',
   });
 }
 
@@ -212,8 +212,8 @@ function renderStudy() {
     ${metric(m.clinical_rows.toLocaleString('pt-BR'), 'registros clínicos', 'fa-notes-medical')}
     ${metric(m.unique_patients.toLocaleString('pt-BR'), 'IDs de paciente distintos', 'fa-users')}
     ${metric(m.dea_rows.toLocaleString('pt-BR'), 'genes avaliados na DEA', 'fa-microscope')}
-    ${metric(`${sigUni}/10`, 'Cox univariado p<0,05', 'fa-chart-line')}
-    ${metric(`${sigMulti}/9`, 'Cox multivariado p<0,05', 'fa-chart-simple')}
+    ${metric(`${sigUni}/10`, 'Cox uni · painel GENESIS-R', 'fa-chart-line')}
+    ${metric(`${sigMulti}/9`, 'Cox multi · painel GENESIS-R', 'fa-chart-simple')}
   </div>
 
   <div class="clinical-gate mt-6">
@@ -224,7 +224,7 @@ function renderStudy() {
   ${sectionNav()}
 
   <section class="card mt-6 genesis-r-section" id="gr-top30">
-    ${sectionHeader('01', 'Top 30 Genes Mais Mutados/Alterados', 'Frequência mutacional calculada no R com denominador n=150.', 'VALIDADO NO R')}
+    ${sectionHeader('01', 'Top 30 Genes Mais Mutados', 'Frequência de mutações somáticas calculada no R com denominador n=150. A figura original preservada pode manter a nomenclatura histórica “Mutados/Alterados”.', 'VALIDADO NO R')}
     <div class="genesis-r-chart-large mt-4"><canvas id="gr-top30-chart"></canvas></div>
     ${rTop30GraphReport()}
     <div class="flex gap-2 mt-4" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="gr-top30-image"><i class="fa-solid fa-image"></i> Comparar com figura R</button></div>
@@ -254,16 +254,17 @@ function renderStudy() {
   </section>
 
   <section class="card mt-6 genesis-r-section" id="gr-cox">
-    ${sectionHeader('03', 'Cox univariado', 'HR, IC95% e p-value lidos diretamente de cox_univariado.csv.', 'DADOS DO R')}
+    ${sectionHeader('03', 'Cox univariado — painel prognóstico GENESIS-R', 'HR, IC95% e p-value lidos de cox_univariado.csv. Esta é uma análise histórica separada e não corresponde ao Forest Plot de referência enviado pelo professor.', 'ANÁLISE R SEPARADA')}
+    <div class="alert warning mt-4"><i class="fa-solid fa-triangle-exclamation"></i> <strong>Não comparar gene a gene com o Forest Plot do professor.</strong> A referência do professor usa NRAS, KRAS, CREBBP, JAK2, PTPN11, TP53, CDK11A, FLT3 e NOTCH2 e está em <a href="resultados.html"><strong>Estudos exploratórios → TARGET ALL → Referência R do professor</strong></a>.</div>
     <div class="genesis-r-chart-forest mt-4"><canvas id="gr-cox-uni-chart"></canvas></div>
     ${rCoxUniGraphReport()}
-    <div class="flex gap-2 mt-4" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="gr-cox-image"><i class="fa-solid fa-image"></i> Comparar com Forest Plot R</button></div>
-    <div class="r-reference-box mt-4" id="gr-cox-original" hidden><img src="${BASE}forest_cox_R_original.jpeg" alt="Forest Plot original produzido no R"></div>
+    <div class="flex gap-2 mt-4" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="gr-cox-image"><i class="fa-solid fa-image"></i> Comparar com a figura histórica desta análise R</button></div>
+    <div class="r-reference-box mt-4" id="gr-cox-original" hidden><img src="${BASE}forest_cox_R_original.jpeg" alt="Forest Plot do painel prognóstico histórico GENESIS-R produzido no R"></div>
     <div class="table-wrap mt-4"><table class="data-table">${coxUniTable()}</table></div>
   </section>
 
   <section class="card mt-6 genesis-r-section" id="gr-cox-multi">
-    ${sectionHeader('04', 'Cox multivariado', 'Modelo conjunto exportado pelo R; esta tabela não possui IC95% no CSV recebido.', 'DADOS DO R')}
+    ${sectionHeader('04', 'Cox multivariado — painel prognóstico GENESIS-R', 'Modelo conjunto da mesma análise histórica separada; esta tabela não possui IC95% no CSV recebido.', 'ANÁLISE R SEPARADA')}
     <div class="genesis-r-chart-medium mt-4"><canvas id="gr-cox-multi-chart"></canvas></div>
     ${rCoxMultiGraphReport()}
     <div class="table-wrap mt-4"><table class="data-table">${coxMultiTable()}</table></div>
@@ -569,7 +570,7 @@ function deaTable(){return `<thead><tr><th>Gene</th><th>logFC</th><th>adj.P.Val<
 function coxUniTable(){return `<thead><tr><th>Gene</th><th>HR</th><th>IC95%</th><th>p</th><th>R</th></tr></thead><tbody>${study.coxUni.map(r=>`<tr><td><strong>${esc(r.Gene)}</strong></td><td>${num(r.HR,3)}</td><td>${num(r.HR_lower,3)}–${num(r.HR_upper,3)}</td><td>${fmtP(r.p_value)}</td><td>${Number(r.p_value)<.05?'<span class="match-pill"><i class="fa-solid fa-check"></i> p<0,05</span>':'—'}</td></tr>`).join('')}</tbody>`}
 function coxMultiTable(){return `<thead><tr><th>Gene</th><th>coef</th><th>HR</th><th>SE</th><th>z</th><th>p</th></tr></thead><tbody>${study.coxMulti.map(r=>`<tr><td><strong>${esc(r.Gene)}</strong></td><td>${num(r.coef,4)}</td><td>${num(r.HR,3)}</td><td>${num(r.se_coef,4)}</td><td>${num(r.z,3)}</td><td>${fmtP(r.p_value)}</td></tr>`).join('')}</tbody>`}
 
-function sectionNav(){return `<div class="genesis-r-section-nav mt-6"><a href="#gr-top30">Top 30</a><a href="#gr-dea">DEA</a><a href="#gr-cox">Cox uni</a><a href="#gr-cox-multi">Cox multi</a><a href="#gr-km">Kaplan–Meier</a><a href="#gr-clinical">Clínico</a></div>`}
+function sectionNav(){return `<div class="genesis-r-section-nav mt-6"><a href="#gr-top30">Top 30</a><a href="#gr-dea">DEA</a><a href="#gr-cox">Cox painel R</a><a href="#gr-cox-multi">Cox multi painel R</a><a href="#gr-km">Kaplan–Meier</a><a href="#gr-clinical">Clínico</a></div>`}
 function sectionHeader(n,title,sub,badge){return `<div class="card__header"><div><div class="result-hero__label">GENESIS-R · ${n}</div><div class="card__title">${title}</div><div class="card__subtitle">${sub}</div></div><span class="quality-badge high"><i class="fa-solid fa-circle-check"></i> ${badge}</span></div>`}
 function metric(value,label,icon){return `<div class="genesis-r-metric"><i class="fa-solid ${icon}"></i><div><strong>${value}</strong><span>${label}</span></div></div>`}
 function miniMetric(value,label){return `<div class="genesis-r-mini"><strong>${Number(value).toLocaleString('pt-BR')}</strong><span>${label}</span></div>`}
@@ -584,6 +585,6 @@ function valueLabelsPlugin(mode){return{id:`labels-${mode}`,afterDatasetsDraw(c)
 function referenceLinePlugin(x){return{id:`ref-${x}`,afterDraw(c){const s=c.scales.x;if(!s)return;const px=s.getPixelForValue(x),{top,bottom}=c.chartArea,ctx=c.ctx;ctx.save();ctx.strokeStyle='rgba(100,116,139,.8)';ctx.setLineDash([6,6]);ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,bottom);ctx.stroke();ctx.restore()}}}
 function pct(v){const n=Number(v);return `${n.toLocaleString('pt-BR',{minimumFractionDigits:n%1?1:0,maximumFractionDigits:1})}%`}
 function num(v,d=2){const n=Number(v);return Number.isFinite(n)?n.toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d}):'—'}
-function fmtP(v){const n=Number(v);if(!Number.isFinite(n))return'—';if(n<0.001)return n.toLocaleString('pt-BR',{maximumSignificantDigits:2});return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})}
+function fmtP(v){const n=Number(v);if(!Number.isFinite(n))return'—';if(n<=0||n<0.0001)return'< 0,0001';if(n<0.001)return n.toLocaleString('pt-BR',{maximumSignificantDigits:2});return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})}
 function sci(v){const n=Number(v);return Number.isFinite(n)?n.toExponential(2).replace('.',','):'—'}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}

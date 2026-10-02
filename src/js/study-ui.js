@@ -18,22 +18,33 @@ export async function renderStudyManager(container,{onReady,simple=false}={}){
     ${dp?activePackHtml(dp):''}
     ${!simple&&loaded.length?loadedStudiesHtml(loaded,dp?.pack?.studyId):''}
     <div class="card study-catalog-card ${(dp||loaded.length)?'mt-6':''}">
-      <div class="card__header"><div><div class="card__title"><i class="fa-solid fa-cloud-arrow-down"></i> cBioPortal — 5 coortes LLA selecionadas</div><div class="card__subtitle">Consulte, armazene e compare mais de uma coorte pública de Leucemia Linfoblástica/Linfoide Aguda no mesmo navegador.</div></div><span class="study-pill ready" id="api-status"><i class="fa-solid fa-spinner fa-spin"></i> Consultando API</span></div>
+      <div class="card__header"><div><div class="card__title"><i class="fa-solid fa-book-medical"></i> Estudos disponíveis para análise</div><div class="card__subtitle">Nesta única área você pode abrir o estudo de validação GENESIS-R ou carregar uma das 5 coortes públicas LLA selecionadas no cBioPortal.</div></div><span class="study-pill ready" id="api-status"><i class="fa-solid fa-spinner fa-spin"></i> Consultando API</span></div>
+      <div class="genesis-r-inline-option mt-4">
+        <div class="genesis-r-inline-option__icon"><i class="fa-solid fa-flask-vial"></i></div>
+        <div class="genesis-r-inline-option__body">
+          <span class="analysis-builder-kicker">ESTUDO DE VALIDAÇÃO DO PROJETO</span>
+          <strong>GENESIS-R — TARGET ALL</strong>
+          <small>Pacote fixo com saídas produzidas pelo pipeline R: Top 30 n=150, DEA, Cox, Kaplan–Meier e dados clínicos. Ele permanece identificado como referência R para não ser confundido com cálculos exploratórios do navegador.</small>
+          <div class="official-r-badges mt-3"><span><i class="fa-solid fa-shield-heart"></i> DADOS DO R</span><span>TARGET ALL</span><span>OS · Sobrevida Global</span></div>
+        </div>
+        <a class="btn btn-primary" href="resultados-r.html?autoload=1"><i class="fa-solid fa-database"></i> Abrir GENESIS-R</a>
+      </div>
+      <div class="study-source-divider mt-4"><span>OU CARREGUE UMA COORTE PÚBLICA</span></div>
       ${simple?'':`<div class="catalog-metrics mt-4"><div><strong id="catalog-total">—</strong><span>estudos no cBioPortal</span></div><div><strong id="catalog-lla">—</strong><span>coortes LLA identificadas</span></div><div><strong>${loaded.length}</strong><span>estudos carregados localmente</span></div></div>
       <div class="analysis-note mt-4"><strong>Multicoorte:</strong> você pode carregar 2–5 estudos e compará-los lado a lado. O GENESIS não mistura automaticamente endpoints ou escalas incompatíveis; cada coorte mantém seus próprios resultados e qualidade técnica.</div>`}
       <div class="study-browser mt-4">
         <div class="form-group"><label class="form-label">Buscar nas 5 coortes selecionadas</label><div class="search-box"><i class="fa-solid fa-magnifying-glass"></i><input id="lla-study-search" placeholder="Ex.: TARGET, St. Jude"></div></div>
-        <div class="form-group"><label class="form-label">Estudo LLA</label><select class="form-select" id="lla-study-select"><option>Carregando estudos…</option></select></div>
+        <div class="form-group"><label class="form-label">Coorte pública LLA (cBioPortal)</label><select class="form-select" id="lla-study-select"><option>Carregando estudos…</option></select></div>
         <div class="form-group"><label class="form-label">Escopo molecular</label><select class="form-select" id="lla-study-scope"><option value="expresso">Expresso — painel GENESIS + até 500 genes mais mutados</option><option value="completo">Completo — todos os genes disponíveis (pesado)</option></select></div>
       </div>
       <div id="study-inspection" class="study-inspection mt-4"></div>
       <div class="study-actions">
-        <button class="btn btn-secondary" id="inspect-study"><i class="fa-solid fa-stethoscope"></i> Verificar estudo</button>
-        <button class="btn btn-primary" id="load-study"><i class="fa-solid fa-database"></i> ${simple?'Carregar estudo':'Carregar/adicionar'}</button>
+        <button class="btn btn-secondary" id="inspect-study"><i class="fa-solid fa-stethoscope"></i> Verificar coorte</button>
+        <button class="btn btn-primary" id="load-study"><i class="fa-solid fa-database"></i> ${simple?'Carregar coorte':'Carregar/adicionar coorte'}</button>
         ${simple?'':'<button class="btn btn-secondary" id="load-five"><i class="fa-solid fa-layer-group"></i> Carregar os 5 (Expresso)</button>'}
         <a class="btn btn-ghost" id="raw-study" href="#" target="_blank" rel="noopener"><i class="fa-solid fa-file-zipper"></i> Baixar pacote bruto</a>
       </div>
-      <div class="study-progress"><div data-study-progress></div></div><div class="study-log" data-study-log>Selecione uma coorte. Para apresentação, carregue primeiro TARGET ALL e depois as demais que desejar comparar.</div>
+      <div class="study-progress"><div data-study-progress></div></div><div class="study-log" data-study-log>Selecione uma coorte pública abaixo ou abra o GENESIS-R acima. Para apresentação com cBioPortal, carregue primeiro TARGET ALL e depois as demais que desejar comparar.</div>
     </div>`;
 
   const select=root.querySelector('#lla-study-select'),search=root.querySelector('#lla-study-search'),status=root.querySelector('#api-status');let lla=[];
