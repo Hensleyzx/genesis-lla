@@ -1,4 +1,4 @@
-# GENESIS LLA V10.7.10 — revisão de interface solicitada pelo orientador
+# GENESIS LLA V10.7.8 — revisão de prontidão para a feira
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
@@ -100,28 +100,10 @@ O Forest Plot de Cox no modo **Referência R do professor** usa diretamente `pub
 - A interface usa **mutações somáticas** para o perfil mutacional, evitando confundir mutação com CNA, fusão ou rearranjo.
 - O Forest Plot de referência do professor continua lendo diretamente `public/data/r_validated/cox_univariado_top10_genes.csv` e a figura original correspondente.
 
-## V10.7.9 — fluxo único de estudos e resultados por blocos
+## V10.8.0 — PWA instalável
 
-- O GENESIS-R foi integrado à mesma área de escolha/carregamento das coortes públicas do cBioPortal; não existe mais um segundo card de estudo acima do carregador principal.
-- A seleção de **genes** e de **tipos de gráfico** foi reunida em um único painel chamado **Montar análise**.
-- Existe apenas **um botão de geração**: `Gerar gráficos selecionados`. A geração automática antiga ligada à seleção de genes foi removida.
-- Os tipos de gráfico são organizados por categoria: **Mutações**, **Sobrevida**, **Perfil demográfico e expressão** e **Expressão diferencial**.
-- Os resultados não são mais apresentados como uma pilha contínua. Cada categoria recebe seu próprio bloco e, quando há múltiplos resultados, o usuário navega por **Anterior**, **Próximo** ou pelo nome do gráfico.
-- Kaplan–Meier continua sendo calculado separadamente por gene; por exemplo, `KM · NRAS`, `KM · KRAS` e `KM · TP53` aparecem como itens independentes dentro do bloco **Sobrevida**.
-- O fluxo científico, denominadores, referências R, Cox, Kaplan–Meier, heatmap demográfico, Top 30, DEA e Volcano não tiveram suas fórmulas alteradas nesta revisão; a mudança é de organização e navegação da interface.
-- A tela de login/autenticação do médico **não foi implementada nesta versão**, conforme decisão de deixar essa etapa para depois.
+O GENESIS pode ser instalado como Progressive Web App (PWA) em navegadores compatíveis. A versão adiciona `manifest.webmanifest`, ícones 192/512 px, ícone maskable, service worker gerado após o build, fallback offline e botão de instalação quando o navegador disponibiliza o evento de instalação.
 
+A estratégia de cache foi deliberadamente limitada ao **app shell** (HTML, CSS, JavaScript, ícones e assets da interface). Consultas à REST API do cBioPortal e payloads científicos (`/data`, `/referencias`, CSV/JSON/R) não são cacheados silenciosamente pelo service worker. Estudos e resultados que o próprio GENESIS persiste continuam sob as regras existentes de `IndexedDB`/`localStorage`.
 
-
-## V10.7.10 — GENESIS-R apenas no menu lateral
-
-A pedido do orientador, o acesso ao **GENESIS-R** foi removido do carregador de estudos em **Estudos & Gráficos**. Essa área agora é dedicada exclusivamente às cinco coortes públicas LLA selecionadas no cBioPortal. O GENESIS-R permanece acessível pela entrada própria **GENESIS-R** no menu lateral, evitando duplicidade de navegação e a impressão de que o estudo de validação é apenas mais uma coorte pública.
-
-Os demais ajustes da V10.7.9 — painel único de genes/gráficos e resultados organizados por blocos com navegação lateral — foram preservados.
-
-
-## V10.7.11 — análises por categoria, sem redundância dos genes
-
-A pedido do orientador, o painel fixo **Genes disponíveis para análise** deixou de ocupar uma coluna separada ao lado dos tipos de gráfico. A configuração agora começa pela categoria **Mutações**, **Sobrevida**, **Perfil demográfico** ou **Expressão diferencial**. Ao abrir **Sobrevida**, por exemplo, os genes aparecem dentro do próprio painel junto das opções Cox/Kaplan–Meier e do modo de sobrevida.
-
-A seleção de biomarcadores é sincronizada entre as categorias que dependem de genes, evitando configurações contraditórias. Expressão diferencial permanece sem seletor manual de genes porque Top DEGs/Volcano trabalham com o conjunto transcriptômico da coorte. A organização dos resultados por blocos e carrosséis da V10.7.9/V10.7.10 foi mantida, e nenhuma fórmula científica foi alterada nesta revisão.
+Em modo offline, páginas e assets já armazenados podem abrir, assim como dados que já existam no armazenamento local. **Novas consultas ao cBioPortal/TARGET exigem conexão com a internet.**

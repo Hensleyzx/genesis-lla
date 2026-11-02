@@ -11,6 +11,97 @@ const NAV_ITEMS = [
 
 const THEME_KEY = 'genesis_theme';
 
+
+let deferredInstallPrompt = null;
+let pwaInitialized = false;
+
+function isStandalonePwa() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+}
+
+function updatePwaInstallButton() {
+  const button = document.getElementById('pwa-install');
+  if (!button) return;
+  if (isStandalonePwa()) { button.hidden = true; return; }
+  if (deferredInstallPrompt || isIosDevice()) {
+    button.hidden = false;
+    button.innerHTML = deferredInstallPrompt
+      ? '<i class="fa-solid fa-download"></i><span>Instalar app</span>'
+      : '<i class="fa-solid fa-mobile-screen-button"></i><span>Instalar app</span>';
+    button.title = deferredInstallPrompt
+      ? 'Instalar o GENESIS neste dispositivo'
+      : 'Adicionar o GENESIS à Tela de Início';
+    return;
+  }
+  button.hidden = true;
+}
+
+async function requestPwaInstall() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    try { await deferredInstallPrompt.userChoice; } finally {
+      deferredInstallPrompt = null;
+      updatePwaInstallButton();
+    }
+    return;
+  }
+  if (isIosDevice()) {
+    window.alert('No iPhone/iPad: abra o menu Compartilhar do Safari e escolha “Adicionar à Tela de Início”.');
+  }
+}
+
+function updateConnectionStatus() {
+  const status = document.querySelector('.header__status');
+  if (!status) return;
+  const label = status.querySelector('span:last-child');
+  const dot = status.querySelector('.status-dot');
+  if (!label || !dot) return;
+  if (navigator.onLine) {
+    label.textContent = 'Ambiente acadêmico ativo';
+    dot.classList.remove('status-dot--offline');
+    status.title = 'Conectado. Novas consultas públicas podem usar a internet.';
+  } else {
+    label.textContent = 'Modo offline · dados locais';
+    dot.classList.add('status-dot--offline');
+    status.title = 'Sem conexão. Novas consultas ao cBioPortal/TARGET ficam indisponíveis.';
+  }
+}
+
+function initPwa() {
+  if (!pwaInitialized) {
+    pwaInitialized = true;
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      updatePwaInstallButton();
+    });
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      updatePwaInstallButton();
+    });
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+  }
+  document.getElementById('pwa-install')?.addEventListener('click', requestPwaInstall);
+  updatePwaInstallButton();
+  updateConnectionStatus();
+
+  if (import.meta.env.PROD && 'serviceWorker' in navigator && window.isSecureContext) {
+    window.addEventListener('load', async () => {
+      try {
+        const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+        registration.update().catch(() => {});
+      } catch (error) {
+        console.warn('[GENESIS PWA] Service worker não registrado:', error);
+      }
+    }, { once: true });
+  }
+}
+
 export function getTheme() {
   return document.documentElement.dataset.theme || localStorage.getItem(THEME_KEY) || 'dark';
 }
@@ -60,6 +151,7 @@ export function renderLayout(activePage, headerTitle) {
       <header class="header">
         <div class="header__title"><button class="menu-toggle" id="menu-toggle" aria-label="Menu"><i class="fa-solid fa-bars"></i></button><h2>${headerTitle}</h2><span class="badge">LLA · pesquisa</span></div>
         <div class="header__right">
+          <button class="pwa-install-button" id="pwa-install" type="button" hidden aria-label="Instalar GENESIS"></button>
           <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema"></button>
           <div class="header__status"><span class="status-dot"></span><span>Ambiente acadêmico ativo</span></div>
           <div class="header__user"><div class="header__avatar"><i class="fa-solid fa-microscope"></i></div><div class="header__user-info"><span class="name">GENESIS</span><span class="role">Bioinformática em LLA</span></div></div>
@@ -84,6 +176,7 @@ export function mountLayout(activePage, headerTitle) {
   backdrop?.addEventListener('click', () => { sidebar.classList.remove('open'); backdrop.classList.remove('active'); });
   document.getElementById('theme-toggle')?.addEventListener('click', () => applyTheme(getTheme() === 'dark' ? 'light' : 'dark'));
   updateThemeButton(saved);
+  initPwa();
 }
 
 export function warningBanner() {

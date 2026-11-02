@@ -52,3 +52,30 @@ for(const jsFile of fs.readdirSync(path.join(root,'src/js')).filter(x=>x.endsWit
 }
 
 console.log('GENESIS V10.5 site integrity tests: OK');
+
+// PWA V10.8.0: manifest, ícones, instalação e geração do service worker.
+const manifestPath=path.join(root,'public','manifest.webmanifest');
+assert.ok(fs.existsSync(manifestPath),'Manifest PWA ausente.');
+const manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
+assert.equal(manifest.display,'standalone','PWA deve abrir em modo standalone.');
+assert.equal(manifest.start_url,'./index.html','start_url PWA deve ser relativo para GitHub Pages.');
+assert.equal(manifest.scope,'./','scope PWA deve ser relativo para GitHub Pages.');
+assert.ok(manifest.icons.some(i=>i.sizes==='192x192'),'Ícone PWA 192x192 ausente.');
+assert.ok(manifest.icons.some(i=>i.sizes==='512x512' && String(i.purpose).includes('maskable')),'Ícone PWA 512/maskable ausente.');
+for(const file of htmlFiles){
+  const html=fs.readFileSync(path.join(root,file),'utf8');
+  assert.match(html,/rel="manifest" href="\.\/manifest\.webmanifest"/i,`${file}: link do manifest ausente.`);
+  assert.match(html,/apple-touch-icon/i,`${file}: apple-touch-icon ausente.`);
+}
+assert.ok(fs.existsSync(path.join(root,'public','icons','icon-192.png')),'Ícone PWA 192 ausente.');
+assert.ok(fs.existsSync(path.join(root,'public','icons','icon-512.png')),'Ícone PWA 512 ausente.');
+assert.ok(fs.existsSync(path.join(root,'scripts','generate-sw.mjs')),'Gerador de service worker ausente.');
+assert.match(common,/beforeinstallprompt/,'Fluxo de instalação PWA ausente.');
+assert.match(common,/serviceWorker\.register\('\.\/sw\.js'/,'Registro do service worker deve ser relativo.');
+assert.match(common,/Modo offline · dados locais/,'Estado offline deve ser explícito.');
+const swGenerator=fs.readFileSync(path.join(root,'scripts','generate-sw.mjs'),'utf8');
+assert.match(swGenerator,/isApiRequest/,'SW deve distinguir APIs externas.');
+assert.match(swGenerator,/isScientificPayload/,'SW deve evitar cache silencioso de payload científico.');
+const packageJson=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
+assert.match(packageJson.scripts.build,/generate-sw\.mjs/,'Build deve gerar o service worker após o Vite.');
+console.log('GENESIS V10.8.0 PWA integrity checks: OK');
