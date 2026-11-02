@@ -2466,3 +2466,14 @@ html[data-theme="light"] .sidebar{background:linear-gradient(180deg,#fbfefe 0%,#
 .status-dot--offline { background: var(--warning) !important; box-shadow: 0 0 8px var(--warning) !important; }
 @media(max-width:900px){ .pwa-install-button span{display:none}.pwa-install-button{padding:8px} }
 @media print { .pwa-install-button{display:none!important} }
+
+/* PWA standalone: mantém o botão de navegação móvel sempre tocável. */
+@media (display-mode: standalone) and (max-width: 860px) {
+  .menu-toggle {
+    position: relative;
+    z-index: 2;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
