@@ -1,7 +1,7 @@
 {
-  "name": "genesis-lla-v10-8-2-pwa",
+  "name": "genesis-lla-v10-8-3-pwa",
   "private": true,
-  "version": "10.8.2",
+  "version": "10.8.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
