@@ -22,6 +22,9 @@ let charts = [];
 let customGenes = [];
 let rReference = null;
 let coxRReference = [];
+let generatedGraphTypes = new Set();
+let generatedGraphConfigs = new Map();
+let activeResultFamily = null;
 
 content.innerHTML = `
 ${warningBanner()}
@@ -46,10 +49,13 @@ rReference = await loadRReference();
 coxRReference = await loadCoxRReference();
 await renderStudyManager('#study-manager', { simple: true, onReady: async () => { await refreshWorkspace(); } });
 await refreshWorkspace();
-window.addEventListener('genesis:themechange', () => { if (dp) renderGeneratedGraphs(true); });
+window.addEventListener('genesis:themechange', () => { if (dp && generatedGraphTypes.size) renderGeneratedGraphs(true); });
 
 async function refreshWorkspace() {
   destroyCharts();
+  generatedGraphTypes.clear();
+  generatedGraphConfigs.clear();
+  activeResultFamily = null;
   dp = await loadDatapack().catch(() => null);
   const host = document.getElementById('results-workspace');
   if (!dp) {
@@ -69,9 +75,10 @@ function renderWorkspace(top10) {
   const mutationDenom = Number(dp.mut?.totalSamples || p.nMutationSamples || 0);
   const top10Html = top10.length ? top10.map((g, i) => `
     <label class="gene-choice">
-      <input type="checkbox" class="result-gene" value="${esc(g)}" ${i === 0 ? 'checked' : ''}>
+      <input type="checkbox" class="result-gene" data-base-gene="1" value="${esc(g)}" ${i === 0 ? 'checked' : ''}>
       <span><strong>${esc(g)}</strong><small>#${i + 1} do Top 30 desta coorte</small></span>
     </label>`).join('') : `<div class="empty-science">O estudo ativo não possui um ranking de mutações suficiente para formar o Top 10.</div>`;
+  const customGenesHtml = customGenes.map(g => `<label class="gene-choice"><input type="checkbox" class="result-gene" value="${esc(g)}" checked><span><strong>${esc(g)}</strong><small>gene adicionado manualmente</small></span></label>`).join('');
 
   const genePicker = (title, note) => `
     <div class="analysis-gene-picker mt-4">
@@ -83,7 +90,7 @@ function renderWorkspace(top10) {
         <button class="btn btn-secondary btn-sm" type="button" data-select-all-genes>Selecionar os 10</button>
         <button class="btn btn-ghost btn-sm" type="button" data-clear-genes>Limpar seleção</button>
       </div>
-      <div class="gene-choice-grid mt-3" data-gene-choice-grid>${top10Html}</div>
+      <div class="gene-choice-grid mt-3" data-gene-choice-grid>${top10Html}${customGenesHtml}</div>
       <div class="custom-gene-add mt-3" style="display:grid;grid-template-columns:1fr auto;gap:10px">
         <input class="form-input custom-gene-input" placeholder="Adicionar outro gene HUGO, ex.: STAT2, MIR221, DAPK1">
         <button class="btn btn-secondary" type="button" data-add-custom-gene><i class="fa-solid fa-plus"></i> Adicionar gene</button>
@@ -99,101 +106,163 @@ function renderWorkspace(top10) {
         <h3>${esc(p.studyName)}</h3>
         <p>${esc(p.studyId)} · ${p.nPatients || 0} pacientes basais · ${p.nAnalysisSamples || 0} amostras basais · ${p.nRCompatibleSamples || p.nRnaSamples || 0} amostras no perfil de expressão · ${mutationDenom} amostras no perfil mutacional</p>
       </div>
-      <div class="cohort-warning"><strong>Política de denominador:</strong> Top 30 usa o case list mutacional completo. No TARGET ALL, KM/Cox usam por padrão a <b>Referência R do professor</b>, que segue o mesmo universo/alinhamento de amostras descrito no roteiro R de referência e permite conferir a divisão 46/46 quando há 92 observações válidas. O modo <b>Basal por paciente</b> é uma análise alternativa, deduplicada, e por isso pode ter outro n.</div>
+      <div class="cohort-warning"><strong>Política de denominador:</strong> Top 30 usa o case list mutacional completo. No TARGET ALL, as análises de sobrevida usam por padrão a <b>Referência R validada</b>, seguindo o universo/alinhamento descrito no roteiro R de referência e permitindo conferir a divisão 46/46 quando há 92 observações válidas. O modo <b>Basal por paciente</b> é uma análise alternativa, deduplicada, e por isso pode ter outro n.</div>
     </div>
   </div>
 
   <div class="card mt-6 analysis-builder-card">
-    <div class="section-route"><span>2</span><div><strong>Montar análise</strong><small>Escolha primeiro o tipo de análise. Os genes aparecem dentro da própria análise quando forem necessários, evitando repetir “Sobrevida” de um lado e biomarcadores do outro.</small></div></div>
+    <div class="section-route"><span>2</span><div><strong>O que você quer analisar?</strong><small>Escolha uma análise. Cada botão abre somente as opções necessárias para aquele gráfico.</small></div></div>
 
-    <div class="analysis-category-tabs mt-4" role="tablist" aria-label="Tipos de análise">
-      <button type="button" class="analysis-category-tab is-active" role="tab" aria-selected="true" data-analysis-tab="mutations"><i class="fa-solid fa-dna"></i><span><strong>Mutações</strong><small>Top 30, frequência e oncoprint</small></span></button>
-      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="survival"><i class="fa-solid fa-chart-line"></i><span><strong>Sobrevida</strong><small>Cox e Kaplan–Meier por gene</small></span></button>
-      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="demographic"><i class="fa-solid fa-table-cells"></i><span><strong>Perfil demográfico</strong><small>Genes × sexo e idade</small></span></button>
-      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="differential"><i class="fa-solid fa-microscope"></i><span><strong>Expressão diferencial</strong><small>Top DEGs e Volcano</small></span></button>
+    <div class="analysis-category-tabs analysis-category-tabs--simple mt-4" role="tablist" aria-label="Análises disponíveis">
+      <button type="button" class="analysis-category-tab is-active" role="tab" aria-selected="true" data-analysis-tab="topgenes"><i class="fa-solid fa-ranking-star"></i><span><strong>Principais genes</strong><small>Genes com mutações mais frequentes</small></span></button>
+      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="mutations"><i class="fa-solid fa-dna"></i><span><strong>Mutações por gene</strong><small>Compare os genes que você escolher</small></span></button>
+      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="survival"><i class="fa-solid fa-heart-pulse"></i><span><strong>Sobrevida</strong><small>Compare as curvas dos genes escolhidos</small></span></button>
+      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="risk"><i class="fa-solid fa-chart-simple"></i><span><strong>Risco relativo</strong><small>Veja a associação dos genes com o desfecho</small></span></button>
+      <button type="button" class="analysis-category-tab analysis-category-tab--secondary" role="tab" aria-selected="false" data-analysis-tab="more"><i class="fa-solid fa-ellipsis"></i><span><strong>Outras análises</strong><small>Sexo, idade, expressão e mapa de mutações</small></span></button>
     </div>
 
     <div class="analysis-category-panels mt-4">
-      <section class="analysis-category-panel is-active" role="tabpanel" data-analysis-panel="mutations">
+      <section class="analysis-category-panel is-active" role="tabpanel" data-analysis-panel="topgenes">
         <div class="analysis-category-panel__head">
-          <span class="analysis-builder-kicker">MUTAÇÕES</span>
-          <strong>Escolher gráficos de mutações</strong>
-          <small>Top 30 e Oncoprint usam seus universos próprios. A frequência mutacional usa os genes selecionados abaixo.</small>
+          <span class="analysis-builder-kicker">PRINCIPAIS GENES MUTADOS</span>
+          <strong>Quais genes apresentam mutações com maior frequência?</strong>
+          <small>Mostra o ranking dos genes mais frequentemente mutados na coorte. Frequência não significa que o gene, sozinho, cause LLA.</small>
         </div>
-        <div class="graph-choice-grid graph-choice-grid--compact mt-3">
-          ${graphChoice('top30','Top 30 oficial — referência R','TARGET ALL · n=150 · usa a figura/valores validados pelo professor e pelo pipeline R.')}
-          ${graphChoice('selectedmut','Frequência mutacional — genes selecionados','Compara somente os genes escolhidos e identifica a origem de cada valor.')}
-          ${graphChoice('mutheat','Oncoprint mutacional basal — Top 30','Matriz binária gene × amostra basal. Não é o heatmap demográfico.')}
+        <div class="analysis-direct-action mt-4">
+          <div><strong>Principais genes mutados</strong><small>${p.studyId===DEFAULT_LLA_STUDY?'Top 30 · referência R validada no TARGET ALL.':'Top 30 da coorte ativa · análise exploratória local.'}</small></div>
+          <button type="button" class="btn btn-primary" data-run-analysis="top30"><i class="fa-solid fa-chart-column"></i> Gerar principais genes</button>
         </div>
-        ${genePicker('Genes para análises por biomarcador','Use esta seleção quando gerar a frequência mutacional. A mesma seleção é preservada se você abrir Sobrevida ou Perfil demográfico.')}
+      </section>
+
+      <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="mutations" hidden>
+        <div class="analysis-category-panel__head">
+          <span class="analysis-builder-kicker">MUTAÇÕES POR GENE</span>
+          <strong>Quais genes você quer analisar?</strong>
+          <small>Marque um ou mais genes abaixo. O gráfico compara a frequência de mutações apenas nos genes escolhidos.</small>
+        </div>
+        ${genePicker('Escolha os genes','Marque os genes que você quer comparar. A seleção também fica disponível nas análises que usam os mesmos biomarcadores.')}
+        <div class="analysis-direct-action mt-4">
+          <div><strong>Frequência de mutações</strong><small>Compare a porcentagem de amostras com mutação em cada gene selecionado.</small></div>
+          <button type="button" class="btn btn-primary" data-run-analysis="selectedmut"><i class="fa-solid fa-dna"></i> Gerar frequência de mutações</button>
+        </div>
       </section>
 
       <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="survival" hidden>
         <div class="analysis-category-panel__head">
           <span class="analysis-builder-kicker">SOBREVIDA</span>
-          <strong>Escolher genes e gráficos de sobrevida</strong>
-          <small>Os biomarcadores ficam aqui dentro porque Cox e Kaplan–Meier são análises por gene. Assim não existe uma segunda área de genes competindo com o bloco Sobrevida.</small>
+          <strong>Como a expressão dos genes se relaciona à sobrevida?</strong>
+          <small>Escolha os genes que deseja comparar. Cada gene gera uma curva de sobrevida, e Anterior/Próximo navega apenas entre essas curvas.</small>
         </div>
-        ${genePicker('Genes para Sobrevida','Selecione um ou mais genes. O Kaplan–Meier cria uma curva separada para cada gene; o Cox usa a regra indicada pelo modo de sobrevida.')}
-        <div class="survival-mode-box mt-4">
-          <div><strong>Modo de sobrevida (KM/Cox)</strong><small>No TARGET ALL, o modo compatível com referência R é o padrão. O modo basal permanece como análise alternativa deduplicada por paciente.</small></div>
-          <label><input type="radio" name="survival-mode" value="r" ${p.studyId===DEFAULT_LLA_STUDY?'checked':''} ${!(p.nRCompatibleSamples||p.nRnaSamples)?'disabled':''}> <span><b>Referência R do professor</b><small>O Forest Plot usa o CSV do professor; Kaplan–Meier segue o alinhamento compatível com o procedimento de referência. Nesse modo, n representa observações de amostra, não necessariamente pacientes únicos. A equivalência numérica integral depende da matriz bruta original.</small></span></label>
-          <label><input type="radio" name="survival-mode" value="basal" ${p.studyId!==DEFAULT_LLA_STUDY?'checked':''}> <span><b>Basal por paciente (alternativa)</b><small>Uma amostra primária por paciente; pode produzir um n diferente da figura R original.</small></span></label>
-        </div>
-        <div class="graph-choice-grid graph-choice-grid--compact mt-3">
-          ${graphChoice('cox','Forest Plot — Cox univariado', p.studyId===DEFAULT_LLA_STUDY ? 'No modo Referência R, usa o CSV do professor; no modo Basal, recalcula apenas os genes selecionados.' : 'Exploratório local: roda somente os genes selecionados; HR por 1 DP de expressão.')}
-          ${graphChoice('km','Kaplan–Meier por gene','Cria uma curva separada para cada gene selecionado; elas serão navegadas individualmente no bloco Sobrevida.')}
+        ${genePicker('Escolha os genes para comparar','Selecione os genes que você quer observar nas curvas de sobrevida.')}
+        ${survivalModeOptions(p)}
+        <div class="analysis-direct-action mt-4">
+          <div><strong>Curvas de sobrevida</strong><small>Kaplan–Meier · comparação entre grupos de expressão alta e baixa.</small></div>
+          <button type="button" class="btn btn-primary" data-run-analysis="km"><i class="fa-solid fa-chart-line"></i> Gerar curvas de sobrevida</button>
         </div>
       </section>
 
-      <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="demographic" hidden>
+      <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="risk" hidden>
         <div class="analysis-category-panel__head">
-          <span class="analysis-builder-kicker">PERFIL DEMOGRÁFICO E EXPRESSÃO</span>
-          <strong>Heatmap por sexo e idade</strong>
-          <small>Escolha os genes dentro deste próprio tipo de análise e gere o heatmap demográfico solicitado pelo professor.</small>
+          <span class="analysis-builder-kicker">RISCO RELATIVO</span>
+          <strong>Quais genes estão mais associados ao desfecho de sobrevida?</strong>
+          <small>O Forest Plot resume a associação por Hazard Ratio (HR). Associação não significa causalidade.</small>
         </div>
-        ${genePicker('Genes para o Heatmap demográfico','A seleção é compartilhada com Mutações e Sobrevida para evitar repetir configurações diferentes para os mesmos biomarcadores.')}
-        <div class="graph-choice-grid graph-choice-grid--compact mt-3">
-          ${graphChoice('demographic','Heatmap demográfico — genes × sexo/idade','GRÁFICO PEDIDO PELO PROFESSOR · Usa amostras basais, idade/sexo clínicos e z-score de expressão.')}
+        ${genePicker('Genes para a análise de risco','Na Referência R validada, o gráfico usa o conjunto fixo do arquivo de referência. No modo basal, usa os genes selecionados aqui.')}
+        <div class="analysis-note mt-4"><strong>Fonte dos dados:</strong> usa a mesma configuração escolhida em Sobrevida. No TARGET ALL, a Referência R validada é o padrão.</div>
+        <div class="analysis-direct-action mt-4">
+          <div><strong>Risco relativo dos genes</strong><small>Forest Plot · modelo de Cox univariado.</small></div>
+          <button type="button" class="btn btn-primary" data-run-analysis="cox"><i class="fa-solid fa-chart-simple"></i> Gerar risco relativo</button>
         </div>
       </section>
 
-      <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="differential" hidden>
+      <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="more" hidden>
         <div class="analysis-category-panel__head">
-          <span class="analysis-builder-kicker">EXPRESSÃO DIFERENCIAL</span>
-          <strong>Comparação Relapse vs None</strong>
-          <small>Estas análises trabalham com o conjunto transcriptômico da coorte e não precisam da seleção manual dos 10 genes.</small>
+          <span class="analysis-builder-kicker">OUTRAS ANÁLISES</span>
+          <strong>Visualizações complementares</strong>
+          <small>Recursos adicionais ficam reunidos aqui para não poluir a navegação principal.</small>
         </div>
-        <div class="graph-choice-grid graph-choice-grid--compact mt-3">
-          ${graphChoice('degs','Top DEGs — Relapse vs None', dp.pack.scope==='completo' ? 'DEA exploratória em escopo completo. Ainda não é limma/R validado.' : 'Exige escopo Completo para evitar FDR/DEGs calculados sobre painel parcial.', dp.pack.scope!=='completo')}
-          ${graphChoice('volcano','Volcano Plot', dp.pack.scope==='completo' ? 'Usa a mesma DEA exploratória completa; validação final depende da saída R corrigida.' : 'Exige escopo Completo; no modo Expresso faltam genes para reproduzir a análise transcriptômica.', dp.pack.scope!=='completo')}
+        <div class="analysis-extra-grid mt-4">
+          <div class="analysis-extra-card">
+            <div><strong>Expressão por sexo e idade</strong><small>Heatmap demográfico dos genes selecionados.</small></div>
+            ${genePicker('Genes para sexo e idade','Escolha os genes que deseja visualizar por sexo e faixa etária.')}
+            <button type="button" class="btn btn-secondary" data-run-analysis="demographic"><i class="fa-solid fa-table-cells"></i> Gerar expressão por sexo e idade</button>
+          </div>
+          <div class="analysis-extra-card">
+            <div><strong>Mapa de mutações</strong><small>Oncoprint basal dos principais genes mutados.</small></div>
+            <button type="button" class="btn btn-secondary" data-run-analysis="mutheat"><i class="fa-solid fa-border-all"></i> Gerar mapa de mutações</button>
+          </div>
+          <div class="analysis-extra-card ${p.scope==='completo'?'':'is-disabled'}">
+            <div><strong>Expressão e recaída</strong><small>Top DEGs e Volcano Plot · exige escopo molecular completo.</small></div>
+            <button type="button" class="btn btn-secondary" data-run-analysis="differential" ${p.scope==='completo'?'':'disabled'}><i class="fa-solid fa-microscope"></i> Gerar análise de expressão</button>
+          </div>
         </div>
       </section>
     </div>
 
-    <div class="analysis-generate-bar mt-4">
-      <div><strong>Configuração pronta?</strong><small>Você pode abrir as categorias acima, marcar os gráficos desejados e gerar tudo com um único botão. Os resultados continuam separados por tipo de análise.</small></div>
-      <div class="flex gap-2" style="flex-wrap:wrap">
-        <button class="btn btn-primary btn-lg" id="generate-selected"><i class="fa-solid fa-play"></i> Gerar gráficos selecionados</button>
-        <button class="btn btn-ghost" id="clear-results"><i class="fa-solid fa-broom"></i> Limpar gráficos</button>
-      </div>
-    </div>
-    <div id="generation-msg" class="mt-3"></div>
+    <div id="generation-msg" class="mt-4"></div>
   </div>
 
   <div class="mt-6">
-    <div class="section-route"><span>3</span><div><strong>Resultados por tipo de análise</strong><small>Sobrevida, mutações, perfil demográfico e expressão diferencial ficam em blocos separados. Quando um bloco possui vários gráficos, navegue lateralmente sem precisar rolar por todos eles.</small></div></div>
+    <div class="section-route"><span>3</span><div><strong>Resultados da análise</strong><small>Os atalhos mostram somente as análises que você gerou. Em Sobrevida, Anterior/Próximo passa apenas entre os genes escolhidos.</small></div></div>
+    <div class="result-clean-row mt-3"><button type="button" class="btn btn-ghost btn-sm" id="clear-results"><i class="fa-solid fa-broom"></i> Limpar resultados</button></div>
     <div id="generated-results" class="result-analysis-groups mt-4"><div class="card"><div class="empty-science">Nenhum gráfico solicitado ainda.</div></div></div>
   </div>`;
 
   setupAnalysisCategoryTabs();
   setupGenePickers();
-  document.getElementById('generate-selected').onclick = () => renderGeneratedGraphs(false);
-  document.getElementById('clear-results').onclick = () => {
+  setupDirectAnalysisActions();
+}
+
+function survivalModeOptions(p) {
+  return `
+    <details class="survival-mode-details mt-4">
+      <summary><i class="fa-solid fa-sliders"></i> Configuração dos dados de sobrevida <span>opcional</span></summary>
+      <div class="survival-mode-box mt-3">
+        <div><strong>Como comparar os dados?</strong><small>A Referência R validada é o padrão no TARGET ALL. A opção basal usa uma amostra primária por paciente.</small></div>
+        <label><input type="radio" name="survival-mode" value="r" ${p.studyId===DEFAULT_LLA_STUDY?'checked':''} ${!(p.nRCompatibleSamples||p.nRnaSamples)?'disabled':''}> <span><b>Referência R validada</b><small>Segue o universo/alinhamento do procedimento de referência. Nesse modo, n representa observações de amostra, não necessariamente pacientes únicos; a equivalência numérica integral depende da matriz bruta correspondente.</small></span></label>
+        <label><input type="radio" name="survival-mode" value="basal" ${p.studyId!==DEFAULT_LLA_STUDY?'checked':''}> <span><b>Uma amostra por paciente</b><small>Análise alternativa deduplicada; pode produzir um n diferente da referência R.</small></span></label>
+      </div>
+    </details>`;
+}
+
+function setupDirectAnalysisActions() {
+  document.querySelectorAll('[data-run-analysis]').forEach(button => {
+    button.addEventListener('click', () => generateAnalysis(button.dataset.runAnalysis));
+  });
+  document.getElementById('clear-results')?.addEventListener('click', () => {
     destroyCharts();
-    document.getElementById('generated-results').innerHTML = emptyResultsHtml();
-    msg('generation-msg','Gráficos removidos da tela.',true);
-  };
+    generatedGraphTypes.clear();
+    generatedGraphConfigs.clear();
+    activeResultFamily = null;
+    const host = document.getElementById('generated-results');
+    if (host) host.innerHTML = emptyResultsHtml();
+    msg('generation-msg','Resultados removidos da tela.',true);
+  });
+}
+
+function generateAnalysis(kind) {
+  const genes = selectedGenes();
+  let types = [];
+  if (kind === 'top30') types = ['top30'];
+  if (kind === 'selectedmut') types = ['selectedmut'];
+  if (kind === 'km') types = ['km'];
+  if (kind === 'cox') types = ['cox'];
+  if (kind === 'demographic') types = ['demographic'];
+  if (kind === 'mutheat') types = ['mutheat'];
+  if (kind === 'differential') types = ['degs','volcano'];
+  if (!types.length) return;
+
+  const survivalMode = selectedSurvivalMode();
+  const requiresGenes = types.some(type => ['selectedmut','km','demographic'].includes(type)) || (types.includes('cox') && !hasExactCoxRReference(survivalMode));
+  if (requiresGenes && !genes.length) return msg('generation-msg','Escolha pelo menos um gene antes de gerar esta análise.',false);
+  if (kind === 'differential' && dp?.pack?.scope !== 'completo') return msg('generation-msg','A análise de expressão e recaída exige o escopo molecular Completo.',false);
+
+  types.forEach(type => {
+    generatedGraphTypes.add(type);
+    generatedGraphConfigs.set(type, { genes:[...genes], survivalMode });
+  });
+  activeResultFamily = types[0];
+  renderGeneratedGraphs(false, new Set(types));
 }
 
 function setupAnalysisCategoryTabs() {
@@ -222,7 +291,7 @@ function setupGenePickers() {
   };
   document.querySelectorAll('.result-gene').forEach(input => input.addEventListener('change', () => syncGene(input)));
   document.querySelectorAll('[data-select-all-genes]').forEach(button => button.addEventListener('click', () => {
-    document.querySelectorAll('.result-gene').forEach(input => { input.checked = true; });
+    document.querySelectorAll('.result-gene[data-base-gene]').forEach(input => { input.checked = true; });
   }));
   document.querySelectorAll('[data-clear-genes]').forEach(button => button.addEventListener('click', () => {
     document.querySelectorAll('.result-gene').forEach(input => { input.checked = false; });
@@ -283,17 +352,14 @@ async function loadCoxRReference() {
   }
 }
 
-function hasExactCoxRReference() {
-  return dp?.pack?.studyId === DEFAULT_LLA_STUDY && selectedSurvivalMode() === 'r' && coxRReference.length > 0;
+function hasExactCoxRReference(mode = selectedSurvivalMode()) {
+  return dp?.pack?.studyId === DEFAULT_LLA_STUDY && mode === 'r' && coxRReference.length > 0;
 }
 
 function selectedGenes() {
   return [...new Set([...document.querySelectorAll('.result-gene:checked')].map(x => String(x.value).toUpperCase()))];
 }
 
-function graphChoice(value, title, note, disabled=false) {
-  return `<label class="graph-choice ${disabled?'disabled':''}"><input type="checkbox" class="result-graph" value="${value}" ${disabled?'disabled':''}><span><strong>${title}</strong>${disabled?'<em class="graph-lock">ESCopo completo necessário</em>':''}<small>${note}</small></span></label>`;
-}
 
 function addCustomGene(input) {
   const gene = String(input?.value || '').trim().toUpperCase();
@@ -313,25 +379,27 @@ function addCustomGene(input) {
   setGenePickerMessage(input,`${gene} adicionado. A seleção foi sincronizada entre as análises por biomarcador.`,true);
 }
 
-async function renderGeneratedGraphs(redrawOnly = false) {
+async function renderGeneratedGraphs(redrawOnly = false, historyTypes = null) {
   if (!dp || !analytics) return;
-  const selectedGraphs = [...document.querySelectorAll('.result-graph:checked')].map(x => x.value);
-  const genes = selectedGenes();
-  if (!selectedGraphs.length) return msg('generation-msg','Escolha pelo menos um gráfico.',false);
-  const geneDependentGraphs = ['selectedmut','cox','km','demographic'];
-  if (selectedGraphs.some(type => geneDependentGraphs.includes(type)) && !genes.length) return msg('generation-msg','A análise selecionada exige pelo menos um gene. Abra a categoria correspondente e escolha um ou mais biomarcadores.',false);
+  const selectedGraphs = [...generatedGraphTypes];
+  if (!selectedGraphs.length) return;
+
+  const configFor = type => generatedGraphConfigs.get(type) || { genes:selectedGenes(), survivalMode:selectedSurvivalMode() };
 
   destroyCharts();
   const cards = [];
   for (const type of selectedGraphs) {
-    if (type === 'top30') cards.push(resultCard('mutations','Top 30 oficial — referência R','Top 30',top30Card()));
-    if (type === 'selectedmut') cards.push(resultCard('mutations','Frequência mutacional — genes selecionados','Frequência',selectedMutationCard(genes)));
-    if (type === 'mutheat') cards.push(resultCard('mutations','Oncoprint mutacional basal — Top 30','Oncoprint',mutationHeatmapCard()));
-    if (type === 'cox') cards.push(resultCard('survival','Forest Plot — Cox univariado','Cox',coxCard(genes)));
-    if (type === 'km') genes.forEach(g => cards.push(resultCard('survival',`Kaplan-Meier — ${g}`,`KM · ${g}`,kmCard(g),g)));
-    if (type === 'demographic') cards.push(resultCard('demographic','Heatmap demográfico — genes × sexo/idade','Heatmap',demographicHeatmapCard(genes)));
-    if (type === 'degs') cards.push(resultCard('differential','Top DEGs — Relapse vs None','Top DEGs',degCard()));
-    if (type === 'volcano') cards.push(resultCard('differential','Volcano Plot — Relapse vs None','Volcano',volcanoCard()));
+    const config = configFor(type);
+    const genes = config.genes || [];
+    const mode = config.survivalMode || 'basal';
+    if (type === 'top30') cards.push(resultCard('mutations','top30','Principais genes mutados','Principais genes',top30Card()));
+    if (type === 'selectedmut') cards.push(resultCard('mutations','selectedmut','Frequência de mutações — genes selecionados','Mutações selecionadas',selectedMutationCard(genes)));
+    if (type === 'mutheat') cards.push(resultCard('mutations','mutheat','Mapa de mutações — Top 30','Mapa de mutações',mutationHeatmapCard()));
+    if (type === 'cox') cards.push(resultCard('cox','cox','Risco relativo dos genes','Risco relativo',coxCard(genes, mode)));
+    if (type === 'km') genes.forEach(g => cards.push(resultCard('survival','km',`Sobrevida — ${g}`,`Gene ${g}`,kmCard(g, mode),g)));
+    if (type === 'demographic') cards.push(resultCard('demographic','demographic','Expressão por sexo e idade','Sexo e idade',demographicHeatmapCard(genes)));
+    if (type === 'degs') cards.push(resultCard('differential','degs','Genes com expressão diferente — recaída vs sem recaída','Genes diferentes',degCard()));
+    if (type === 'volcano') cards.push(resultCard('differential','volcano','Diferenças de expressão — visão geral','Diferenças de expressão',volcanoCard()));
   }
 
   const host = document.getElementById('generated-results');
@@ -340,101 +408,154 @@ async function renderGeneratedGraphs(redrawOnly = false) {
     : '<div class="card"><div class="empty-science">Nenhum resultado pôde ser preparado com os dados disponíveis.</div></div>';
 
   const rendered = [];
-  if (selectedGraphs.includes('top30') && drawTop30()) rendered.push({title:'Top 30 oficial — referência R', genes:[], status:'validado contra R'});
-  if (selectedGraphs.includes('selectedmut') && drawSelectedMutation(genes)) rendered.push({title:'Frequência mutacional — genes selecionados', genes, status:allGenesHaveRReference(genes)?'referência R':'misto: referência R + exploratório'});
-  if (selectedGraphs.includes('mutheat') && drawMutationHeatmap()) rendered.push({title:'Oncoprint mutacional basal — Top 30', genes:[]});
-  if (selectedGraphs.includes('cox') && drawCox(genes)) rendered.push({title:'Forest Plot — Cox univariado', genes:hasExactCoxRReference()?coxRReference.map(r=>r.Gene):genes, status:hasExactCoxRReference()?'referência R do professor':'exploratório local'});
-  if (selectedGraphs.includes('km')) for (const g of genes) if (drawKM(g)) rendered.push({title:`Kaplan-Meier — ${g}`, genes:[g]});
-  if (selectedGraphs.includes('demographic') && drawDemographicHeatmap(genes)) rendered.push({title:'Heatmap demográfico — genes × sexo/idade', genes});
-  if (selectedGraphs.includes('degs') && drawDEGs()) rendered.push({title:'Top DEGs — Relapse vs None', genes:[]});
-  if (selectedGraphs.includes('volcano') && drawVolcano()) rendered.push({title:'Volcano Plot — Relapse vs None', genes:[]});
+  if (selectedGraphs.includes('top30') && drawTop30()) rendered.push({type:'top30', title:'Principais genes mutados', genes:[], status:isTargetTop30Reference()?'validado contra R':'exploratório local'});
+  if (selectedGraphs.includes('selectedmut')) {
+    const genes = configFor('selectedmut').genes || [];
+    if (drawSelectedMutation(genes)) rendered.push({type:'selectedmut', title:'Frequência de mutações — genes selecionados', genes, status:allGenesHaveRReference(genes)?'referência R':'misto: referência R + exploratório'});
+  }
+  if (selectedGraphs.includes('mutheat') && drawMutationHeatmap()) rendered.push({type:'mutheat', title:'Mapa de mutações — Top 30', genes:[]});
+  if (selectedGraphs.includes('cox')) {
+    const config = configFor('cox');
+    const genes = config.genes || [];
+    const mode = config.survivalMode || 'basal';
+    if (drawCox(genes, mode)) rendered.push({type:'cox', title:'Risco relativo dos genes (Cox)', genes:hasExactCoxRReference(mode)?coxRReference.map(r=>r.Gene):genes, status:hasExactCoxRReference(mode)?'referência R validada':'exploratório local'});
+  }
+  if (selectedGraphs.includes('km')) {
+    const config = configFor('km');
+    const genes = config.genes || [];
+    const mode = config.survivalMode || 'basal';
+    for (const g of genes) if (drawKM(g, mode)) rendered.push({type:'km', title:`Sobrevida — ${g} (Kaplan–Meier)`, genes:[g]});
+  }
+  if (selectedGraphs.includes('demographic')) {
+    const genes = configFor('demographic').genes || [];
+    if (drawDemographicHeatmap(genes)) rendered.push({type:'demographic', title:'Expressão por sexo e idade', genes});
+  }
+  if (selectedGraphs.includes('degs') && drawDEGs()) rendered.push({type:'degs', title:'Genes com expressão diferente — recaída vs sem recaída', genes:[]});
+  if (selectedGraphs.includes('volcano') && drawVolcano()) rendered.push({type:'volcano', title:'Diferenças de expressão — visão geral', genes:[]});
 
-  setupGroupedResultCarousels();
+  setupGroupedResultNavigation();
 
   if (!redrawOnly) {
-    saveHistory(rendered);
-    msg('generation-msg', `${rendered.length} gráfico(s) preparado(s) e separados por tipo de análise. Use os nomes e as setas de cada bloco para alternar entre gráficos sem percorrer uma pilha de resultados.`, true);
+    const historyItems = historyTypes ? rendered.filter(item => historyTypes.has(item.type)) : rendered;
+    saveHistory(historyItems);
+    msg('generation-msg', `${rendered.length} gráfico(s) disponível(is). Cada análise preserva os genes e a configuração usados no momento em que foi gerada.`, true);
     setTimeout(() => document.getElementById('generated-results')?.scrollIntoView({ behavior:'smooth', block:'start' }), 0);
   }
 }
 
-function resultCard(group, title, navLabel, html, gene='') {
-  return { group, title, navLabel, html, gene };
+function resultCard(group, family, title, navLabel, html, gene='') {
+  return { group, family, title, navLabel, html, gene };
 }
 
 function emptyResultsHtml() {
   return '<div class="card"><div class="empty-science">Nenhum gráfico solicitado ainda.</div></div>';
 }
 
-function resultGroupMeta(key) {
-  const groups = {
-    survival: {
-      title: 'Sobrevida',
-      subtitle: 'Forest Plot de Cox e curvas Kaplan–Meier. Cada gene de Kaplan–Meier aparece como um gráfico separado.',
-      icon: 'fa-chart-line',
-    },
-    mutations: {
-      title: 'Mutações',
-      subtitle: 'Frequência e distribuição das alterações somáticas da coorte ou da referência R.',
-      icon: 'fa-dna',
-    },
-    demographic: {
-      title: 'Perfil demográfico e expressão',
-      subtitle: 'Expressão dos genes selecionados organizada por sexo e faixa etária da coorte.',
-      icon: 'fa-table-cells',
-    },
-    differential: {
-      title: 'Expressão diferencial',
-      subtitle: 'Análises exploratórias de expressão Relapse vs None no escopo molecular adequado.',
-      icon: 'fa-microscope',
-    },
+
+function resultFamilyMeta(key) {
+  const families = {
+    cox: { label:'Risco relativo', technical:'Forest Plot · Cox univariado', icon:'fa-chart-simple' },
+    km: { label:'Curvas de sobrevida', technical:'Kaplan–Meier por gene', icon:'fa-chart-line' },
+    top30: { label:'Principais genes', technical:'Top 30 de genes mais frequentemente mutados', icon:'fa-ranking-star' },
+    selectedmut: { label:'Frequência de mutações', technical:'Genes escolhidos', icon:'fa-dna' },
+    mutheat: { label:'Mapa de mutações', technical:'Oncoprint mutacional', icon:'fa-table-cells' },
+    demographic: { label:'Sexo e idade', technical:'Heatmap demográfico — genes × sexo/idade', icon:'fa-users' },
+    degs: { label:'Genes diferentes', technical:'Top DEGs', icon:'fa-arrow-trend-up' },
+    volcano: { label:'Diferenças de expressão', technical:'Volcano Plot', icon:'fa-chart-area' },
   };
-  return groups[key] || { title:key, subtitle:'', icon:'fa-chart-column' };
+  return families[key] || { label:key, technical:'', icon:'fa-chart-column' };
+}
+
+function buildFamilyContent(items, family) {
+  if (items.length === 1) return `<div class="result-family-single">${items[0].html}</div>`;
+  const isSurvivalCurves = family === 'km';
+  const first = items[0];
+  return `
+    <div class="result-subcarousel" data-result-subcarousel="${esc(family)}">
+      <div class="result-subcarousel-toolbar">
+        <button type="button" class="btn btn-secondary btn-sm" data-subcarousel-prev disabled><i class="fa-solid fa-chevron-left"></i> Anterior</button>
+        <div class="result-carousel-current">
+          <strong data-subcarousel-title>${esc(first.gene ? `Gene ${first.gene}` : first.title)}</strong>
+          <small data-subcarousel-counter>${isSurvivalCurves?'Curva':'Gráfico'} 1 de ${items.length}</small>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" data-subcarousel-next>Próximo <i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+      <div class="result-subcarousel-viewport">
+        ${items.map((item,index)=>`<article class="result-subcarousel-slide ${index===0?'is-active':'is-after'}" data-subcarousel-slide="${index}" data-item-title="${esc(item.gene ? `Gene ${item.gene}` : item.title)}" aria-hidden="${index===0?'false':'true'}">${item.html}</article>`).join('')}
+      </div>
+    </div>`;
 }
 
 function buildGroupedResults(cards) {
-  const order = ['survival','mutations','demographic','differential'];
-  return order.map(group => {
-    const items = cards.filter(card => card.group === group);
-    if (!items.length) return '';
-    const meta = resultGroupMeta(group);
-    return `
-      <section class="result-analysis-block" data-result-carousel="${esc(group)}">
-        <div class="result-analysis-block__head">
-          <div class="result-analysis-block__identity">
-            <span class="result-analysis-block__icon"><i class="fa-solid ${meta.icon}"></i></span>
-            <div><strong>${esc(meta.title)}</strong><small>${esc(meta.subtitle)}</small></div>
-          </div>
-          <span class="study-pill">${items.length} ${items.length===1?'gráfico':'gráficos'}</span>
-        </div>
-        <div class="result-carousel-tabs" role="tablist" aria-label="Gráficos de ${esc(meta.title)}">
-          ${items.map((item,index)=>`<button type="button" role="tab" aria-selected="${index===0?'true':'false'}" class="result-carousel-tab ${index===0?'is-active':''}" data-carousel-go="${index}" title="${esc(item.title)}">${esc(item.navLabel)}</button>`).join('')}
-        </div>
-        <div class="result-carousel-toolbar">
-          <button type="button" class="btn btn-secondary btn-sm" data-carousel-prev ${items.length===1?'disabled':''}><i class="fa-solid fa-chevron-left"></i> Anterior</button>
-          <div class="result-carousel-current"><strong data-carousel-title>${esc(items[0].title)}</strong><small data-carousel-counter>Gráfico 1 de ${items.length}</small></div>
-          <button type="button" class="btn btn-secondary btn-sm" data-carousel-next ${items.length===1?'disabled':''}>Próximo <i class="fa-solid fa-chevron-right"></i></button>
-        </div>
-        <div class="result-carousel-viewport">
-          ${items.map((item,index)=>`<article class="result-carousel-slide ${index===0?'is-active':'is-after'}" data-carousel-slide="${index}" aria-hidden="${index===0?'false':'true'}">${item.html}</article>`).join('')}
-        </div>
-      </section>`;
-  }).join('');
+  const familyOrder = ['top30','selectedmut','mutheat','km','cox','demographic','degs','volcano'];
+  const families = familyOrder.filter(family => cards.some(card => card.family === family));
+  if (!families.length) return emptyResultsHtml();
+  const initialFamily = families.includes(activeResultFamily) ? activeResultFamily : families[0];
+
+  const shortcuts = `
+    <div class="card result-generated-shortcuts">
+      <div class="result-generated-shortcuts__head">
+        <div><strong>Gráficos gerados</strong><small>Escolha qual resultado deseja visualizar. Apenas um tipo de gráfico aparece por vez.</small></div>
+      </div>
+      <div class="result-shortcut-list" role="tablist" aria-label="Gráficos gerados">
+        ${families.map((family,index) => {
+          const meta = resultFamilyMeta(family);
+          return `<button type="button" role="tab" aria-selected="${family===initialFamily?'true':'false'}" class="result-shortcut ${family===initialFamily?'is-active':''}" data-result-shortcut="${esc(family)}"><i class="fa-solid ${meta.icon}"></i><span>${esc(meta.label)}</span></button>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  const stage = `
+    <div class="result-main-stage mt-4">
+      ${families.map((family,index) => {
+        const meta = resultFamilyMeta(family);
+        const items = cards.filter(card => card.family === family);
+        return `<section class="result-main-panel ${family===initialFamily?'is-active':(families.indexOf(family)<families.indexOf(initialFamily)?'is-before':'is-after')}" data-result-family-panel="${esc(family)}" aria-hidden="${family===initialFamily?'false':'true'}">
+          <div class="result-main-panel__head"><div><strong>${esc(meta.label)}</strong><small>${esc(meta.technical)}</small></div></div>
+          ${buildFamilyContent(items,family)}
+        </section>`;
+      }).join('')}
+    </div>`;
+
+  return shortcuts + stage;
 }
 
-function setupGroupedResultCarousels() {
-  document.querySelectorAll('[data-result-carousel]').forEach(block => {
-    const slides = [...block.querySelectorAll('[data-carousel-slide]')];
-    const tabs = [...block.querySelectorAll('[data-carousel-go]')];
-    const prev = block.querySelector('[data-carousel-prev]');
-    const next = block.querySelector('[data-carousel-next]');
-    const title = block.querySelector('[data-carousel-title]');
-    const counter = block.querySelector('[data-carousel-counter]');
-    const viewport = block.querySelector('.result-carousel-viewport');
-    if (!slides.length || !viewport) return;
-    let index = 0;
+function setupGroupedResultNavigation() {
+  const shortcuts = [...document.querySelectorAll('[data-result-shortcut]')];
+  const panels = [...document.querySelectorAll('[data-result-family-panel]')];
+  if (shortcuts.length && panels.length) {
+    const showFamily = family => {
+      activeResultFamily = family;
+      const targetIndex = Math.max(0, panels.findIndex(panel => panel.dataset.resultFamilyPanel === family));
+      panels.forEach((panel,index) => {
+        panel.classList.toggle('is-active', index === targetIndex);
+        panel.classList.toggle('is-before', index < targetIndex);
+        panel.classList.toggle('is-after', index > targetIndex);
+        panel.setAttribute('aria-hidden', index === targetIndex ? 'false' : 'true');
+      });
+      shortcuts.forEach(button => {
+        const active = button.dataset.resultShortcut === panels[targetIndex]?.dataset.resultFamilyPanel;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      requestAnimationFrame(() => charts.filter(c => panels[targetIndex]?.contains(c.canvas)).forEach(c => { try { c.resize(); } catch {} }));
+    };
+    shortcuts.forEach(button => button.addEventListener('click', () => showFamily(button.dataset.resultShortcut)));
+    const initialShortcut = shortcuts.find(button => button.classList.contains('is-active')) || shortcuts[0];
+    showFamily(initialShortcut.dataset.resultShortcut);
+  }
 
-    const cardsafeTitle = slide => slide?.querySelector('.card__title')?.textContent?.trim() || `Gráfico ${index + 1}`;
+  document.querySelectorAll('[data-result-subcarousel]').forEach(carousel => {
+    const slides = [...carousel.querySelectorAll('[data-subcarousel-slide]')];
+    const prev = carousel.querySelector('[data-subcarousel-prev]');
+    const next = carousel.querySelector('[data-subcarousel-next]');
+    const title = carousel.querySelector('[data-subcarousel-title]');
+    const counter = carousel.querySelector('[data-subcarousel-counter]');
+    if (!slides.length) return;
+    let index = 0;
+    const family = carousel.dataset.resultSubcarousel;
+    const noun = family === 'km' ? 'Gene' : 'Gráfico';
+
     const show = nextIndex => {
       index = Math.max(0, Math.min(slides.length - 1, nextIndex));
       slides.forEach((slide,i) => {
@@ -443,26 +564,21 @@ function setupGroupedResultCarousels() {
         slide.classList.toggle('is-after', i > index);
         slide.setAttribute('aria-hidden', i === index ? 'false' : 'true');
       });
-      tabs.forEach((tab,i) => {
-        tab.classList.toggle('is-active', i === index);
-        tab.setAttribute('aria-selected', i === index ? 'true' : 'false');
-      });
-      if (title) title.textContent = cardsafeTitle(slides[index]);
-      if (counter) counter.textContent = `Gráfico ${index + 1} de ${slides.length}`;
+      if (title) title.textContent = slides[index]?.dataset.itemTitle || `${noun} ${index + 1}`;
+      if (counter) counter.textContent = `${noun} ${index + 1} de ${slides.length}`;
       if (prev) prev.disabled = index === 0;
       if (next) next.disabled = index === slides.length - 1;
-      requestAnimationFrame(() => charts.filter(c => block.contains(c.canvas)).forEach(c => { try { c.resize(); } catch {} }));
+      requestAnimationFrame(() => charts.filter(c => slides[index]?.contains(c.canvas)).forEach(c => { try { c.resize(); } catch {} }));
     };
 
     prev?.addEventListener('click', () => show(index - 1));
     next?.addEventListener('click', () => show(index + 1));
-    tabs.forEach((tab,i) => tab.addEventListener('click', () => show(i)));
     show(0);
   });
 }
 
 function statusHeader(extra='') {
-  return `<div class="validated-result-head"><span class="quality-badge mid"><i class="fa-solid fa-flask"></i> EXPLORATÓRIO LOCAL</span><span class="study-pill">${esc(dp.pack.studyId)}</span>${extra}</div>`;
+  return `<div class="validated-result-head"><span class="quality-badge mid"><i class="fa-solid fa-flask"></i> EXPLORATÓRIO LOCAL</span>${extra}</div>`;
 }
 
 function validatedStatusHeader(extra='') {
@@ -470,7 +586,7 @@ function validatedStatusHeader(extra='') {
 }
 
 function coxRReferenceHeader(extra='') {
-  return `<div class="validated-result-head"><span class="quality-badge high"><i class="fa-solid fa-shield-heart"></i> REFERÊNCIA R DO PROFESSOR</span><span class="study-pill">TARGET ALL</span><span class="study-pill">CSV original · 9 modelos</span>${extra}</div>`;
+  return `<div class="validated-result-head"><span class="quality-badge high"><i class="fa-solid fa-shield-heart"></i> REFERÊNCIA R VALIDADA</span><span class="study-pill">TARGET ALL</span><span class="study-pill">CSV original · 9 modelos</span>${extra}</div>`;
 }
 
 
@@ -480,6 +596,16 @@ function top30GraphReport() {
     finding: 'Na referência R com n=150, NRAS foi o mais frequente (10,7%; 16/150), seguido de KRAS (5,3%; 8/150). TP53, PTPN11, JAK2 e CREBBP aparecem com 4,0%.',
     caution: 'Frequência na coorte não é risco individual, não define prognóstico sozinha e não representa uma faixa de normalidade clínica.',
     source: 'Referência validada no R',
+  });
+}
+
+function localTop30GraphReport(rows, denom) {
+  const first = rows[0];
+  return graphReport({
+    what: 'Ranking exploratório dos genes com mutações somáticas mais frequentes na coorte pública atualmente carregada.',
+    finding: first ? `${first.gene} apresentou a maior frequência mutacional nesta coorte (${Number(first.value).toFixed(1)}%; ${first.count}/${denom || '—'} amostras).` : 'Não houve genes mutados suficientes para resumir a coorte.',
+    caution: 'Frequência de mutação não demonstra causalidade, não identifica sozinha genes responsáveis pela LLA e não representa risco individual.',
+    source: `Exploratório local · ${dp?.pack?.studyId || 'coorte ativa'}`,
   });
 }
 
@@ -562,32 +688,49 @@ function kmGraphReport(gene, survival) {
   });
 }
 
+function isTargetTop30Reference() {
+  return dp?.pack?.studyId === DEFAULT_LLA_STUDY && !!rReference?.genes?.length;
+}
+
+function localTop30Rows() {
+  return (analytics?.topMut || [])
+    .filter(row => row?.symbol && Number.isFinite(Number(row.frequency)))
+    .sort((a,b)=>Number(b.frequency)-Number(a.frequency) || Number(b.count||0)-Number(a.count||0))
+    .slice(0, 30)
+    .map(row => ({ gene:String(row.symbol).toUpperCase(), value:Number(row.frequency), count:Number(row.count || 0) }));
+}
+
 function top30Card() {
-  if (!rReference?.genes?.length) return noDataCard('Top 30 oficial — referência R','O arquivo numérico da referência R não pôde ser carregado.');
-  return `<div class="card result-graph-card">${validatedStatusHeader()}<div class="card__title">Top 30 Genes Mais Mutados</div><div class="card__subtitle">Figura oficial do projeto. Denominador mutacional: 150 amostras perfiladas. Este gráfico substitui o antigo ranking roxo de n=81.</div><div class="r-reference-box mt-4"><img id="result-top30-reference" src="${import.meta.env.BASE_URL}fig1_top30_genes_R_original.jpeg" alt="Top 30 validado contra R"></div>${top30GraphReport()}<p class="chart-note mt-3">NRAS 10,7% · KRAS 5,3% · TP53/PTPN11/JAK2/CREBBP 4,0%. Valores completos auditáveis em resultados-r.html.</p></div>`;
+  if (isTargetTop30Reference()) {
+    return `<div class="card result-graph-card">${validatedStatusHeader()}<div class="card__title">Principais genes mutados</div><div class="card__subtitle">Genes com mutações mais frequentes na coorte de referência. No TARGET ALL, o denominador mutacional é de 150 amostras perfiladas.</div><div class="r-reference-box mt-4"><img id="result-top30-reference" src="${import.meta.env.BASE_URL}fig1_top30_genes_R_original.jpeg" alt="Top 30 validado contra R"></div>${top30GraphReport()}<p class="chart-note mt-3">NRAS 10,7% · KRAS 5,3% · TP53/PTPN11/JAK2/CREBBP 4,0%. Valores completos auditáveis em resultados-r.html.</p></div>`;
+  }
+  const rows = localTop30Rows();
+  if (!rows.length) return noDataCard('Principais genes mutados','A coorte ativa não possui dados mutacionais suficientes para montar o ranking.');
+  const denom = Number(dp?.mut?.totalSamples || dp?.pack?.nMutationSamples || 0);
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(dp.pack.studyId)}</span><span class="study-pill">n mutacional=${denom || '—'}</span>`)}<div class="card__title">Principais genes mutados</div><div class="card__subtitle">Ranking exploratório dos genes com maior frequência de mutações na coorte ativa. Este resultado não usa a referência fixa do TARGET ALL.</div><div class="single-result-canvas"><canvas id="result-top30-local"></canvas></div>${localTop30GraphReport(rows, denom)}</div>`;
 }
 
 function selectedMutationCard(genes) {
-  if (!genes.length) return noDataCard('Frequência mutacional — genes selecionados','Selecione pelo menos um gene.');
+  if (!genes.length) return noDataCard('Frequência de mutações — genes selecionados','Selecione pelo menos um gene.');
   const rows = selectedMutationRows(genes);
-  if (!rows.length) return noDataCard('Frequência mutacional — genes selecionados','Nenhum dos genes selecionados possui frequência mutacional disponível.');
+  if (!rows.length) return noDataCard('Frequência de mutações — genes selecionados','Nenhum dos genes selecionados possui frequência mutacional disponível.');
   const hasRef = rows.some(r=>r.source==='R');
-  return `<div class="card result-graph-card">${hasRef?validatedStatusHeader('<span class="study-pill">valores R quando disponíveis</span>'):statusHeader()}<div class="card__title">Frequência mutacional — genes selecionados</div><div class="card__subtitle">“Valor de referência” significa a frequência observada na saída R do estudo, e não um valor clínico normal. Genes que não constam no Top 30 R são marcados como exploratórios do estudo ativo.</div><div class="single-result-canvas"><canvas id="result-selected-mut"></canvas></div>${selectedMutationGraphReport(rows)}<div id="selected-mut-meta" class="mt-4"></div></div>`;
+  return `<div class="card result-graph-card">${hasRef?validatedStatusHeader('<span class="study-pill">valores R quando disponíveis</span>'):statusHeader()}<div class="card__title">Frequência de mutações — genes selecionados</div><div class="card__subtitle">“Valor de referência” significa a frequência observada na saída R do estudo, e não um valor clínico normal. Genes que não constam no Top 30 R são marcados como exploratórios do estudo ativo.</div><div class="single-result-canvas"><canvas id="result-selected-mut"></canvas></div>${selectedMutationGraphReport(rows)}<div id="selected-mut-meta" class="mt-4"></div></div>`;
 }
 
 function mutationHeatmapCard() {
   const basalGenes=Object.values(dp.mut?.basal?.byGene||{});
-  if (!basalGenes.length || !(dp.pack?.mutationSelection?.sampleIds||[]).length) return noDataCard('Oncoprint mutacional basal — Top 30','Matriz mutacional basal não disponível.');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${dp.pack.mutationSelection.sampleIds.length} amostras basais</span><span class="study-pill">NÃO É O HEATMAP DEMOGRÁFICO</span>`)}<div class="card__title">Oncoprint mutacional basal — Top 30 genes</div><div class="card__subtitle">Matriz de mutações somáticas da seleção basal. Linhas = genes; colunas = amostras; célula preenchida = mutação somática detectada. Este gráfico permanece como análise mutacional e não corresponde ao heatmap de sexo/idade solicitado pelo professor.</div><div class="mutation-heatmap-scroll mt-4"><canvas id="result-mutheat"></canvas></div>${mutationHeatmapGraphReport()}</div>`;
+  if (!basalGenes.length || !(dp.pack?.mutationSelection?.sampleIds||[]).length) return noDataCard('Mapa de mutações — Top 30','Matriz mutacional basal não disponível.');
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${dp.pack.mutationSelection.sampleIds.length} amostras basais</span><span class="study-pill">NÃO É O HEATMAP DEMOGRÁFICO</span>`)}<div class="card__title">Mapa de mutações — Top 30 genes</div><div class="card__subtitle">Matriz de mutações somáticas da seleção basal. Linhas = genes; colunas = amostras; célula preenchida = mutação somática detectada. Este gráfico permanece como análise mutacional e não corresponde ao heatmap demográfico de sexo/idade.</div><div class="mutation-heatmap-scroll mt-4"><canvas id="result-mutheat"></canvas></div>${mutationHeatmapGraphReport()}</div>`;
 }
 
 
 function demographicHeatmapCard(genes) {
   const data = buildDemographicHeatmap(dp, genes, { maxGenes:20, minGroupN:5 });
-  if (!data.available) return noDataCard('Heatmap demográfico — genes × sexo/idade', data.reason || 'Dados demográficos e de expressão insuficientes.');
+  if (!data.available) return noDataCard('Expressão por sexo e idade', data.reason || 'Dados demográficos e de expressão insuficientes.');
   const groupPills = data.groups.map(g => `<span class="study-pill">${esc(g.label)} · n=${g.n}</span>`).join('');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">PEDIDO DO PROFESSOR</span><span class="study-pill">basal por paciente</span><span class="study-pill">corte etário: mediana ${esc(data.cutoffLabel)} anos</span>`)}
-    <div class="card__title">Heatmap demográfico — genes × sexo/idade</div>
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">PERFIL DEMOGRÁFICO</span><span class="study-pill">basal por paciente</span><span class="study-pill">corte etário: mediana ${esc(data.cutoffLabel)} anos</span>`)}
+    <div class="card__title">Expressão por sexo e idade</div>
     <div class="card__subtitle">Expressão média padronizada (z-score) dos genes selecionados em quatro grupos demográficos. O corte etário é a mediana da própria coorte elegível, usado apenas para visualização e <strong>não</strong> como limiar clínico.</div>
     <div class="demographic-group-pills mt-3">${groupPills}</div>
     <div id="result-demographic-heatmap" class="demographic-heatmap-wrap mt-4"></div>
@@ -652,35 +795,35 @@ function heatZColor(value) {
 }
 
 function degCard() {
-  if (dp.pack.scope!=='completo') return noDataCard('Top DEGs — Relapse vs None','Bloqueado no modo Expresso: um painel parcial altera o universo de testes e o FDR. Reconstrua o estudo em escopo Completo.');
-  if (!analytics.topDEGs?.length) return noDataCard('Top DEGs — Relapse vs None','Dados insuficientes para DEA significativa nesta coorte.');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">Relapse ${analytics.dea.n1||0} vs None ${analytics.dea.n0||0}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Top DEGs — Relapse vs None</div><div class="card__subtitle">DEA local aproximada em log2(expressão+1). O resultado só recebe selo R após comparação com a tabela limma corrigida.</div><div class="single-result-canvas"><canvas id="result-degs"></canvas></div>${degGraphReport()}</div>`;
+  if (dp.pack.scope!=='completo') return noDataCard('Genes com expressão diferente — recaída vs sem recaída','Bloqueado no modo Expresso: um painel parcial altera o universo de testes e o FDR. Reconstrua o estudo em escopo Completo.');
+  if (!analytics.topDEGs?.length) return noDataCard('Genes com expressão diferente — recaída vs sem recaída','Dados insuficientes para DEA significativa nesta coorte.');
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">Relapse ${analytics.dea.n1||0} vs None ${analytics.dea.n0||0}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Genes com expressão diferente — recaída vs sem recaída</div><div class="card__subtitle">DEA local aproximada em log2(expressão+1). O resultado só recebe selo R após comparação com a tabela limma corrigida.</div><div class="single-result-canvas"><canvas id="result-degs"></canvas></div>${degGraphReport()}</div>`;
 }
 
 function volcanoCard() {
-  if (dp.pack.scope!=='completo') return noDataCard('Volcano Plot','Bloqueado no modo Expresso: o painel parcial não reproduz o universo transcriptômico usado pelo R e altera o FDR.');
-  if (!(analytics.dea?.table||[]).length) return noDataCard('Volcano Plot','DEA não disponível nesta coorte.');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(dp.pack.expressionTransform?.label||'escala não informada')}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Volcano Plot — Relapse vs None</div><div class="card__subtitle">FDR &lt; 0,05 e |log2FC| &gt; 0,5. Esta é uma reprodução exploratória local; para equivalência científica, compare com a saída do Script.R corrigido (limma-trend).</div><div class="single-result-canvas"><canvas id="result-volcano"></canvas></div>${volcanoGraphReport()}</div>`;
+  if (dp.pack.scope!=='completo') return noDataCard('Diferenças de expressão — visão geral','Bloqueado no modo Expresso: o painel parcial não reproduz o universo transcriptômico usado pelo R e altera o FDR.');
+  if (!(analytics.dea?.table||[]).length) return noDataCard('Diferenças de expressão — visão geral','DEA não disponível nesta coorte.');
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(dp.pack.expressionTransform?.label||'escala não informada')}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Diferenças de expressão — visão geral</div><div class="card__subtitle">FDR &lt; 0,05 e |log2FC| &gt; 0,5. Esta é uma reprodução exploratória local; para equivalência científica, compare com a saída do Script.R corrigido (limma-trend).</div><div class="single-result-canvas"><canvas id="result-volcano"></canvas></div>${volcanoGraphReport()}</div>`;
 }
 
-function coxCard(genes) {
-  if (hasExactCoxRReference()) {
+function coxCard(genes, mode = selectedSurvivalMode()) {
+  if (hasExactCoxRReference(mode)) {
     const refGenes=coxRReference.map(r=>r.Gene);
-    return `<div class="card result-graph-card">${coxRReferenceHeader(`<span class="study-pill">genes: ${refGenes.map(esc).join(', ')}</span><span class="study-pill">OS · OS_MONTHS</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Reprodução da referência do professor. Os pontos, intervalos e p-values abaixo são lidos diretamente de <strong>cox_univariado_top10_genes.csv</strong>; por isso este modo não substitui NOTCH2 por TAS2R19 nem recalcula o conjunto de genes a partir do Top 30 mutacional.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div><details class="r-reference-box mt-4"><summary><strong>Comparar com a figura R original</strong></summary><img src="${import.meta.env.BASE_URL}data/r_validated/fig7_forest_cox.png" alt="Forest Plot Cox univariado original fornecido pelo professor"></details></div>`;
+    return `<div class="card result-graph-card">${coxRReferenceHeader(`<span class="study-pill">genes: ${refGenes.map(esc).join(', ')}</span><span class="study-pill">OS · OS_MONTHS</span>`)}<div class="card__title">Risco relativo dos genes</div><div class="card__subtitle"><strong>Forest Plot · Cox univariado.</strong> Reprodução da referência R validada do projeto. Os pontos, intervalos e p-values abaixo são lidos diretamente de <strong>cox_univariado_top10_genes.csv</strong>; por isso este modo não substitui NOTCH2 por TAS2R19 nem recalcula o conjunto de genes a partir do Top 30 mutacional.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div><details class="r-reference-box mt-4"><summary><strong>Comparar com a figura R original</strong></summary><img src="${import.meta.env.BASE_URL}data/r_validated/fig7_forest_cox.png" alt="Forest Plot Cox univariado original de referência"></details></div>`;
   }
-  const ctx=survivalContextFor(genes);
+  const ctx=survivalContextFor(genes, mode);
   const available = ctx.genes;
   const v=ctx.v;
-  if (!available.length || !v.endpointAdequate) return noDataCard('Forest Plot — Cox univariado','Endpoint/expressão insuficientes: são necessários pelo menos 20 registros válidos e 5 eventos, além de expressão para o(s) gene(s) selecionado(s).');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Forest Plot — Cox univariado</div><div class="card__subtitle">Exploratório local no modo Basal por paciente. Somente os genes escolhidos são recalculados; HR por +1 DP de expressão, com IC95% e p locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução e o teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div></div>`;
+  if (!available.length || !v.endpointAdequate) return noDataCard('Risco relativo dos genes','Endpoint/expressão insuficientes: são necessários pelo menos 20 registros válidos e 5 eventos, além de expressão para o(s) gene(s) selecionado(s).');
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">genes: ${available.map(esc).join(', ')}</span><span class="study-pill">${esc(v.endpointKey)} · ${esc(v.endpointTimeColumn||'tempo?')}</span>`)}<div class="card__title">Risco relativo dos genes</div><div class="card__subtitle"><strong>Forest Plot · Cox univariado.</strong> Exploratório local no modo Basal por paciente. Somente os genes escolhidos são recalculados; HR por +1 DP de expressão, com IC95% e p locais. O FDR é corrigido apenas dentro dos genes selecionados nesta execução e o teste cox.zph do R ainda é necessário antes de validar.</div><div class="single-result-canvas"><canvas id="result-cox"></canvas></div><div id="cox-graph-report"></div><div id="cox-meta" class="mt-4"></div></div>`;
 }
 
-function kmCard(gene) {
-  const ctx=survivalContextFor([gene]);
+function kmCard(gene, mode = selectedSurvivalMode()) {
+  const ctx=survivalContextFor([gene], mode);
   const row = ctx.rows[gene];
   const v = ctx.v;
-  if (!row || !v.endpointAdequate) return noDataCard(`Kaplan-Meier — ${gene}`,`${gene} não possui expressão alinhada com um endpoint adequado (mínimo 20 registros e 5 eventos) no estudo ativo.`);
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(v.endpointLabel||'sobrevida')}</span><span class="study-pill">${esc(v.endpointTimeColumn||'tempo?')}</span><span class="study-pill">gene ${esc(gene)}</span>`)}<div class="card__title">Kaplan-Meier — ${esc(gene)}</div><div class="card__subtitle">Grupos Alto/Baixo definidos pela mediana de expressão na coorte do modo escolhido. A faixa translúcida representa o IC95% log-log/Greenwood. Curva de grupos de referência, não previsão individual.</div><div class="single-result-canvas"><canvas id="result-km-${safeId(gene)}"></canvas></div><div id="km-graph-report-${safeId(gene)}"></div><div id="km-meta-${safeId(gene)}" class="mt-3"></div></div>`;
+  if (!row || !v.endpointAdequate) return noDataCard(`Sobrevida — ${gene}`,`${gene} não possui expressão alinhada com um endpoint adequado (mínimo 20 registros e 5 eventos) no estudo ativo.`);
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(v.endpointLabel||'sobrevida')}</span><span class="study-pill">${esc(v.endpointTimeColumn||'tempo?')}</span><span class="study-pill">gene ${esc(gene)}</span>`)}<div class="card__title">Sobrevida — ${esc(gene)}</div><div class="card__subtitle"><strong>Curva Kaplan–Meier.</strong> Grupos Alto/Baixo definidos pela mediana de expressão na coorte do modo escolhido. A faixa translúcida representa o IC95% log-log/Greenwood. Curva de grupos de referência, não previsão individual.</div><div class="single-result-canvas"><canvas id="result-km-${safeId(gene)}"></canvas></div><div id="km-graph-report-${safeId(gene)}"></div><div id="km-meta-${safeId(gene)}" class="mt-3"></div></div>`;
 }
 
 function noDataCard(title, note) {
@@ -713,7 +856,19 @@ function selectedMutationRows(genes) {
 }
 
 function drawTop30() {
-  return !!document.getElementById('result-top30-reference');
+  if (isTargetTop30Reference()) return !!document.getElementById('result-top30-reference');
+  const el = document.getElementById('result-top30-local');
+  const rows = localTop30Rows();
+  if (!el || !rows.length) return false;
+  const t = getChartTheme();
+  const d = [...rows].sort((a,b)=>a.value-b.value);
+  charts.push(new Chart(el,{
+    type:'bar',
+    data:{labels:d.map(r=>r.gene),datasets:[{label:'Frequência (%)',data:d.map(r=>r.value),backgroundColor:'rgba(79,94,120,.72)',borderColor:'#43506a',borderWidth:1}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',animation:false,layout:{padding:{right:44}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${Number(c.raw).toFixed(1)}%`,afterLabel:c=>`${d[c.dataIndex].count} amostra(s) alterada(s)`}}},scales:{x:{beginAtZero:true,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'Frequência de mutação (%)',color:t.text}},y:{ticks:{color:t.text},grid:{display:false}}}},
+    plugins:[barValueLabels(d)]
+  }));
+  return true;
 }
 
 function drawSelectedMutation(genes) {
@@ -812,12 +967,12 @@ function drawExactCoxRReference(el) {
   const sig=d.filter(r=>r.p_value<.05);
   if(coxReport) coxReport.innerHTML=graphReport({
     title:'Leitura do Forest Plot — referência R',
-    what:'Cada ponto é o Hazard Ratio do modelo Cox univariado fornecido no CSV do professor; a barra horizontal é o IC95% e a linha tracejada marca HR = 1.',
+    what:'Cada ponto é o Hazard Ratio do modelo Cox univariado fornecido no CSV de referência; a barra horizontal é o IC95% e a linha tracejada marca HR = 1.',
     finding:`${sig.length} de ${d.length} modelos têm p < 0,05 no CSV de referência. NOTCH2 está presente (HR 1,518; IC95% 1,248–1,845) e TAS2R19 não pertence a esta tabela de Cox.`,
     caution:'Este cartão exibe a saída de referência fornecida. Não deve ser confundido com o recálculo exploratório local a partir dos genes selecionados.'
   });
   const meta=document.getElementById('cox-meta');
-  if(meta) meta.innerHTML=`<div class="table-wrap"><table class="data-table"><thead><tr><th>Gene</th><th>HR</th><th>IC95%</th><th>p</th><th>Significância</th></tr></thead><tbody>${d.slice().reverse().map(r=>`<tr><td><strong>${esc(r.Gene)}</strong></td><td>${r.HR.toFixed(3)}</td><td>${r.HR_lower.toFixed(3)}–${r.HR_upper.toFixed(3)}</td><td>${fmtP(r.p_value)}</td><td>${r.p_value<.05?'p < 0,05':'—'}</td></tr>`).join('')}</tbody></table></div><p class="chart-note mt-3">Fonte: cox_univariado_top10_genes.csv fornecido nesta revisão. O arquivo contém 9 modelos. A ordem visual é determinada pelo HR, como no Forest Plot R enviado pelo professor.</p>`;
+  if(meta) meta.innerHTML=`<div class="table-wrap"><table class="data-table"><thead><tr><th>Gene</th><th>HR</th><th>IC95%</th><th>p</th><th>Significância</th></tr></thead><tbody>${d.slice().reverse().map(r=>`<tr><td><strong>${esc(r.Gene)}</strong></td><td>${r.HR.toFixed(3)}</td><td>${r.HR_lower.toFixed(3)}–${r.HR_upper.toFixed(3)}</td><td>${fmtP(r.p_value)}</td><td>${r.p_value<.05?'p < 0,05':'—'}</td></tr>`).join('')}</tbody></table></div><p class="chart-note mt-3">Fonte: cox_univariado_top10_genes.csv fornecido nesta revisão. O arquivo contém 9 modelos. A ordem visual é determinada pelo HR, como no Forest Plot R de referência.</p>`;
   return true;
 }
 
@@ -831,10 +986,10 @@ function forestCIReferencePlugin(){
 }
 function tickReferenceColor(){return getChartTheme().muted||'#555';}
 
-function drawCox(genes) {
+function drawCox(genes, mode = selectedSurvivalMode()) {
   const el=document.getElementById('result-cox'); if(!el) return false;
-  if (hasExactCoxRReference()) return drawExactCoxRReference(el);
-  const x=survivalContextFor(genes),v=x.v; if(!x.genes.length||!v.endpointAdequate) return false;
+  if (hasExactCoxRReference(mode)) return drawExactCoxRReference(el);
+  const x=survivalContextFor(genes, mode),v=x.v; if(!x.genes.length||!v.endpointAdequate) return false;
   let d=coxUnivariate(v.time,v.event,x.genes,x.rows).filter(r=>Number.isFinite(r.HR)&&r.HR>0&&r.HR_lower>0&&r.HR_upper>0);
   if(!d.length){
     if(el.parentElement)el.parentElement.innerHTML='<div class="empty-science">Nenhum gene passou os mínimos do Cox nesta execução (≥20 casos completos, ≥5 eventos, expressão variável e convergência).</div>';
@@ -856,9 +1011,9 @@ function drawCox(genes) {
   return true;
 }
 
-function drawKM(gene) {
+function drawKM(gene, mode = selectedSurvivalMode()) {
   const el=document.getElementById(`result-km-${safeId(gene)}`); if(!el) return false;
-  const x=survivalContextFor([gene]),v=x.v,row=x.rows[gene]; if(!row||!v.endpointAdequate) return false;
+  const x=survivalContextFor([gene], mode),v=x.v,row=x.rows[gene]; if(!row||!v.endpointAdequate) return false;
   const s=analyzeSurvival(v.time,v.event,row.values);
   if(!s||!s.km?.length){
     if(el.parentElement)el.parentElement.innerHTML='<div class="empty-science">Kaplan-Meier não gerado: este gene não atingiu ≥20 casos completos, ≥5 eventos e ≥5 observações em cada grupo definido pela mediana.</div>';
@@ -951,8 +1106,8 @@ function selectedSurvivalMode(){
   return'basal';
 }
 
-function survivalContextFor(genes){
-  const mode=selectedSurvivalMode(),rows={},available=[];
+function survivalContextFor(genes, mode = selectedSurvivalMode()){
+  const rows={},available=[];
   if(mode==='r'){
     const v=buildRCompatibleReferenceVectors(dp);
     for(const gene of genes){

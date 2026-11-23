@@ -17,7 +17,7 @@ ${warningBanner()}
   <div>
     <div class="result-hero__label">ESTUDO FIXO · RESULTADOS PRODUZIDOS NO R</div>
     <h1 class="page-title">GENESIS-R — Estudo de Validação TARGET ALL</h1>
-    <p class="page-desc">Painel de validação estatística do GENESIS baseado nos arquivos gerados pelo pipeline R do projeto. Este modo <strong>não substitui os valores do R por cálculos locais</strong>: ele carrega os CSVs fornecidos e apresenta a procedência de cada resultado. <strong>Importante:</strong> o Cox desta página pertence ao painel prognóstico histórico GENESIS-R e é uma análise diferente do Forest Plot de referência enviado pelo professor (NRAS, KRAS, CREBBP, JAK2, PTPN11, TP53, CDK11A, FLT3 e NOTCH2), que fica em “Estudos exploratórios”.</p>
+    <p class="page-desc">Painel de validação estatística do GENESIS baseado nos arquivos gerados pelo pipeline R do projeto. Este modo <strong>não substitui os valores do R por cálculos locais</strong>: ele carrega os CSVs fornecidos e apresenta a procedência de cada resultado. <strong>Importante:</strong> o Cox desta página pertence ao painel prognóstico histórico GENESIS-R e é uma análise diferente do Forest Plot de referência do projeto (NRAS, KRAS, CREBBP, JAK2, PTPN11, TP53, CDK11A, FLT3 e NOTCH2), que fica em “Estudos exploratórios”.</p>
   </div>
   <a class="btn btn-secondary" href="resultados.html"><i class="fa-solid fa-arrow-left"></i> Estudos exploratórios</a>
 </div>
@@ -254,8 +254,8 @@ function renderStudy() {
   </section>
 
   <section class="card mt-6 genesis-r-section" id="gr-cox">
-    ${sectionHeader('03', 'Cox univariado — painel prognóstico GENESIS-R', 'HR, IC95% e p-value lidos de cox_univariado.csv. Esta é uma análise histórica separada e não corresponde ao Forest Plot de referência enviado pelo professor.', 'ANÁLISE R SEPARADA')}
-    <div class="alert warning mt-4"><i class="fa-solid fa-triangle-exclamation"></i> <strong>Não comparar gene a gene com o Forest Plot do professor.</strong> A referência do professor usa NRAS, KRAS, CREBBP, JAK2, PTPN11, TP53, CDK11A, FLT3 e NOTCH2 e está em <a href="resultados.html"><strong>Estudos exploratórios → TARGET ALL → Referência R do professor</strong></a>.</div>
+    ${sectionHeader('03', 'Cox univariado — painel prognóstico GENESIS-R', 'HR, IC95% e p-value lidos de cox_univariado.csv. Esta é uma análise histórica separada e não corresponde ao Forest Plot de referência do projeto.', 'ANÁLISE R SEPARADA')}
+    <div class="alert warning mt-4"><i class="fa-solid fa-triangle-exclamation"></i> <strong>Não comparar gene a gene com o Forest Plot de referência.</strong> A referência R validada usa NRAS, KRAS, CREBBP, JAK2, PTPN11, TP53, CDK11A, FLT3 e NOTCH2 e está em <a href="resultados.html"><strong>Estudos exploratórios → TARGET ALL → Referência R validada</strong></a>.</div>
     <div class="genesis-r-chart-forest mt-4"><canvas id="gr-cox-uni-chart"></canvas></div>
     ${rCoxUniGraphReport()}
     <div class="flex gap-2 mt-4" style="flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="gr-cox-image"><i class="fa-solid fa-image"></i> Comparar com a figura histórica desta análise R</button></div>

@@ -125,7 +125,7 @@ export function rCompatibleExpressionValues(dp,gene){
   const key=String(gene||'').toUpperCase();
   const row=(dp.exprR||[]).find(r=>String(r.symbol).toUpperCase()===key);
   if(!row)return null;
-  const all=Array.from(row.values||[],v=>Number(v));
+  const all=Array.from(row.values||[],v=>v==null||String(v).trim()===''?NaN:Number(v));
   const finite=all.filter(Number.isFinite);
   if(!finite.length)return null;
   const med=median(finite);

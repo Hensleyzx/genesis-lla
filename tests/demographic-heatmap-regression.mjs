@@ -72,11 +72,11 @@ assert(/\bAGE_IN_DAYS\b/.test(header), 'clinical_data.csv deve conter AGE_IN_DAY
 
 // A interface precisa oferecer e gerar o novo heatmap.
 const ui = fs.readFileSync(new URL('../src/js/resultados.js', import.meta.url), 'utf8');
-assert(ui.includes("graphChoice('demographic'"));
+assert(ui.includes('data-run-analysis="demographic"'), 'A análise demográfica deve ter um botão direto de geração.');
 assert(ui.includes('drawDemographicHeatmap(genes)'));
 assert(ui.includes('Heatmap demográfico — genes × sexo/idade'));
 assert(!ui.includes("new Set(['selectedmut','demographic','cox','km'])"), 'A revisão atual remove a geração automática de um pacote fixo de gráficos.');
-assert(ui.includes('id="generate-selected"'), 'A interface deve usar o botão único de geração do painel unificado.');
+assert(!ui.includes('id="generate-selected"'), 'A interface atual deve usar ações diretas por análise, sem botão genérico redundante.');
 assert(ui.includes('mediana da própria coorte'));
 assert(ui.includes('não testa significância entre grupos'));
 

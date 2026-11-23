@@ -209,11 +209,11 @@ import * as st from './stats.js';
     for (let j = 0; j < p; j++) {
       const se = cov ? Math.sqrt(Math.max(cov[j][j], 0)) : NaN;
       res.se.push(se);
-      const z = isFinite(se) && se > 0 ? beta[j] / se : NaN;
+      const z = Number.isFinite(se) && se > 0 ? beta[j] / se : NaN;
       res.z.push(z);
-      res.p.push(isFinite(z) ? st.normalP2(z) : NaN);
+      res.p.push(Number.isFinite(z) ? st.normalP2(z) : NaN);
       res.HR.push(Math.exp(beta[j]));
-      if (isFinite(se) && se > 0) {
+      if (Number.isFinite(se) && se > 0) {
         res.hrLower.push(Math.exp(beta[j] - 1.959964 * se));
         res.hrUpper.push(Math.exp(beta[j] + 1.959964 * se));
       } else {
@@ -235,10 +235,10 @@ import * as st from './stats.js';
       if (!row) continue;
       const rows = [];
       for (let i = 0; i < time.length; i++) {
-        if (!isFinite(time[i]) || time[i] === null) continue;
+        if (!Number.isFinite(time[i]) || time[i] === null) continue;
         if (time[i] <= 0) continue;
         if (!Number.isFinite(event[i])) continue;
-        if (!isFinite(row.values[i])) continue;
+        if (!Number.isFinite(row.values[i])) continue;
         rows.push({ time: time[i], event: event[i] ? 1 : 0, covariates: [row.values[i]] });
       }
       const nEvents = rows.reduce((a, r) => a + (r.event ? 1 : 0), 0);
@@ -266,13 +266,14 @@ import * as st from './stats.js';
   export function multivariate(time, event, genes, exprRows) {
     const rows = [];
     for (let i = 0; i < time.length; i++) {
-      if (!isFinite(time[i]) || time[i] === null) continue;
+      if (!Number.isFinite(time[i]) || time[i] === null) continue;
       if (time[i] <= 0) continue;
+      if (!Number.isFinite(event[i])) continue;
       const covs = [];
       let ok = true;
       for (const g of genes) {
         const r = exprRows[g];
-        if (!r || !isFinite(r.values[i])) { ok = false; break; }
+        if (!r || !Number.isFinite(r.values[i])) { ok = false; break; }
         covs.push(r.values[i]);
       }
       if (!ok) continue;

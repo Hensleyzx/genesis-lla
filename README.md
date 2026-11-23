@@ -1,4 +1,4 @@
-# GENESIS LLA V10.7.10 — revisão de interface solicitada pelo orientador
+# GENESIS LLA V10.7.12 — navegação clínica simplificada
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
@@ -7,8 +7,18 @@ Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com i
 - **Análise do Paciente**: entrada de identificação, idade, sexo, leucócitos, subtipo, BCR-ABL1, mutações somáticas e expressão com escala informada. O caso pode ser comparado com 1–5 coortes já carregadas.
 - **Estudos & Gráficos**: seleção/carregamento de estudos LLA e geração de Top 30 mutacional, heatmap, Kaplan–Meier, Cox, DEA e Volcano conforme a disponibilidade e os critérios mínimos.
 - **Histórico**: mantém separadas as análises de pacientes e os gráficos de coortes produzidos no navegador.
-- **Resultados do R**: permanecem separados dos cálculos exploratórios locais e exibem diretamente as saídas fornecidas pelo roteiro R do professor.
+- **Resultados do R**: permanecem separados dos cálculos exploratórios locais e exibem diretamente as saídas fornecidas pelo roteiro R de referência do projeto.
 - **Sobre o Projeto**: objetivo, autores, metodologia e limites científicos.
+
+
+## V10.7.12 — navegação por família de gráfico
+
+- remove os botões repetidos `KM · GENE` da navegação principal;
+- separa **Risco relativo** (Forest Plot/Cox) de **Curvas de sobrevida** (Kaplan–Meier);
+- `Anterior/Próximo` atua somente dentro de conjuntos do mesmo tipo, como as curvas de sobrevida por gene;
+- adiciona atalhos no topo dos resultados com apenas um botão por tipo de gráfico gerado;
+- adota rótulos mais práticos para o usuário, preservando os nomes científicos como informação secundária;
+- substitui referências visuais a “professor” por **Referência R validada** / **referência do projeto** nas telas de resultados.
 
 ## Módulo do paciente
 
@@ -30,7 +40,7 @@ O cadastro salvo preserva os dados clínicos, médico responsável, genes, muta�
 - **Exploratório local**: cálculo feito no navegador e ainda não confrontado com a execução R correspondente.
 - O **Top 30 oficial** do TARGET ALL usa o case list mutacional completo `n=150`, reproduz os percentuais visíveis na figura R fornecida e é exibido em vermelho/laranja como referência principal.
 - A seleção basal por paciente é mantida separadamente para expressão, sobrevida, pareamento e heatmap basal; ela não pode mais alterar o denominador do Top 30 oficial.
-- A área de seleção de genes possui um botão **Gerar gráficos** que gera imediatamente a frequência mutacional dos genes selecionados e tenta Cox/Kaplan–Meier quando os mínimos são atendidos.
+- A área **Montar análise** reúne a escolha do tipo de análise e dos genes necessários, com um único botão **Gerar gráficos selecionados**. Nos resultados, há apenas um atalho por família de gráfico; curvas Kaplan–Meier de vários genes são navegadas internamente com **Anterior/Próximo**.
 
 ## Regras científicas consolidadas
 
@@ -125,3 +135,40 @@ Os demais ajustes da V10.7.9 — painel único de genes/gráficos e resultados o
 A pedido do orientador, o painel fixo **Genes disponíveis para análise** deixou de ocupar uma coluna separada ao lado dos tipos de gráfico. A configuração agora começa pela categoria **Mutações**, **Sobrevida**, **Perfil demográfico** ou **Expressão diferencial**. Ao abrir **Sobrevida**, por exemplo, os genes aparecem dentro do próprio painel junto das opções Cox/Kaplan–Meier e do modo de sobrevida.
 
 A seleção de biomarcadores é sincronizada entre as categorias que dependem de genes, evitando configurações contraditórias. Expressão diferencial permanece sem seletor manual de genes porque Top DEGs/Volcano trabalham com o conjunto transcriptômico da coorte. A organização dos resultados por blocos e carrosséis da V10.7.9/V10.7.10 foi mantida, e nenhuma fórmula científica foi alterada nesta revisão.
+
+
+## V10.7.12 — atalhos por tipo de gráfico
+
+- Os resultados passaram a oferecer atalhos por família de gráfico, evitando botões separados para cada gene.
+- Kaplan–Meier mantém navegação interna por gene com **Anterior/Próximo**.
+- Forest Plot/Cox permanece separado das curvas de sobrevida.
+- Rótulos da interface foram simplificados sem remover os nomes técnicos das análises.
+
+## V10.7.13 — fluxo direto e linguagem mais intuitiva
+
+- O painel de configuração agora começa com **O que você quer analisar?**, usando ações diretas: **Principais genes**, **Mutações por gene**, **Sobrevida**, **Risco relativo** e **Outras análises**.
+- **Sobrevida** gera diretamente as curvas Kaplan–Meier; não existe uma segunda caixa para marcar “Kaplan–Meier”, removendo a redundância apontada na revisão do orientador.
+- **Risco relativo** (Forest Plot/Cox) é tratado como análise independente e não aparece dentro do conjunto de curvas de sobrevida.
+- **Principais genes** substitui o rótulo “Top 30 oficial” na navegação. O texto explica que o ranking mostra genes **mais frequentemente mutados na coorte** e não prova que sejam, isoladamente, causadores de LLA.
+- A análise de frequência mutacional usa a chamada **Quais genes você quer analisar?**, incentivando a seleção antes da geração do gráfico.
+- Os resultados gerados ficam em uma única área: os botões superiores funcionam como abas e **somente um tipo de gráfico é exibido por vez**.
+- Quando Sobrevida possui vários genes, **Anterior/Próximo** navega somente pelas curvas desses genes. Forest Plot, Top 30 e demais gráficos não entram nesse carrossel.
+- Configurações metodológicas de sobrevida foram recolhidas em **Configuração dos dados de sobrevida (opcional)** para reduzir poluição visual, preservando a referência R e o modo deduplicado.
+- Heatmap demográfico, Oncoprint e expressão diferencial continuam disponíveis em **Outras análises**, sem competir com os testes principais durante a apresentação.
+- Nenhuma fórmula científica de Kaplan–Meier, Cox, Top 30, DEA, Volcano ou heatmap foi alterada nesta revisão.
+- A tela de login/autenticação do médico continua fora do escopo desta versão.
+
+
+## V10.7.14 — revisão de bugs e simulações
+
+A V10.7.14 consolida uma rodada de revisão após o fluxo intuitivo da V10.7.13. Foram corrigidos problemas encontrados por simulação de uso contínuo e por testes com dados ausentes:
+
+- cada análise gerada preserva os genes e o modo de sobrevida usados no momento da geração; alterar a seleção depois não modifica silenciosamente gráficos anteriores;
+- ao gerar um novo tipo de gráfico, esse resultado passa a ser o painel ativo em vez de a interface voltar para o primeiro atalho;
+- o histórico registra somente a análise solicitada naquela ação, evitando duplicar gráficos antigos;
+- **Principais genes** usa a referência R validada somente no TARGET ALL; em outras coortes, o ranking é calculado a partir da própria coorte e identificado como exploratório local;
+- Cox univariado e multivariado rejeitam `null`, `undefined`, `NaN` e eventos ausentes em vez de permitir coerção implícita para zero/censura;
+- no modo compatível com R, expressão ausente é tratada como NA e segue a imputação por mediana do procedimento de referência, nunca como zero;
+- **Selecionar os 10** afeta apenas os dez genes-base e não genes adicionados manualmente; genes manuais são preservados quando a área de análise é redesenhada.
+
+Além da suíte existente, foi executado estresse adicional com 2.000 coortes sintéticas contendo censura, empates e dados ausentes. As proteções de KM/Cox e os invariantes estatísticos permaneceram válidos.

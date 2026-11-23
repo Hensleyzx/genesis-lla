@@ -45,6 +45,6 @@ assert.equal(chooseSampleList(lists,'rna',agilent)?.sampleListId,'all_phase2_tar
 // 6) A interface deve distinguir a saída R original da análise basal deduplicada.
 assert.match(resultados,/Modo compatível com referência R/,'O modo de referência deve ser rotulado como compatível, sem alegar reprodução integral.');
 assert.match(resultados,/n representa observações de amostra, não necessariamente pacientes únicos/,'A interface não deve chamar 46\/46 automaticamente de pacientes únicos.');
-assert.match(resultados,/Basal por paciente \(alternativa\)/,'Modo deduplicado deve ser apresentado como análise distinta.');
+assert.match(resultados,/Uma amostra por paciente/,'Modo deduplicado deve ser apresentado como análise distinta em linguagem simples.');
 
 console.log('GENESIS V10.7.6 teacher-review regression tests: OK');

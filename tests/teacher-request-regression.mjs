@@ -9,16 +9,21 @@ const scriptR=fs.readFileSync('public/referencias/Script.R','utf8');
 const scriptValidation=fs.readFileSync('public/referencias/Script_LLA_validacao.R','utf8');
 
 assert.ok(!resultados.includes('id="generate-gene-graphs"'),'A interface não deve manter um segundo botão de geração junto aos genes.');
-assert.equal((resultados.match(/id="generate-selected"/g)||[]).length,1,'Genes e tipos de gráfico devem compartilhar um único botão de geração.');
-assert.match(resultados,/Montar análise/,'Genes e gráficos precisam ficar reunidos em um único painel de configuração.');
+assert.ok(!resultados.includes('id="generate-selected"'),'A revisão atual não deve manter um botão genérico de geração que force o usuário a relacionar duas áreas diferentes.');
+assert.match(resultados,/data-run-analysis="top30"/,'Principais genes deve ter geração direta.');
+assert.match(resultados,/data-run-analysis="km"/,'Sobrevida deve gerar Kaplan–Meier diretamente, sem uma segunda seleção redundante.');
+assert.match(resultados,/data-run-analysis="cox"/,'Risco relativo deve ser uma análise independente de Sobrevida.');
+assert.match(resultados,/O que você quer analisar\?/,'A interface deve induzir o usuário a escolher uma análise de forma direta.');
 assert.match(resultados,/analysis-category-tabs/,'Seletor por tipo de análise ausente.');
 assert.match(resultados,/data-analysis-tab="survival"/,'A categoria Sobrevida deve ser acionável diretamente.');
 assert.match(resultados,/data-analysis-panel="survival"/,'O painel de Sobrevida deve abrir os próprios controles.');
-assert.match(resultados,/Genes para Sobrevida/,'Os genes de Sobrevida precisam aparecer dentro do próprio painel de Sobrevida.');
+assert.match(resultados,/Escolha os genes para comparar/,'Os genes de Sobrevida precisam aparecer dentro do próprio painel de Sobrevida.');
 assert.ok(!resultados.includes('analysis-builder-grid'),'A interface não deve voltar ao layout redundante de genes em uma coluna e análises em outra.');
-assert.match(resultados,/result-analysis-block/,'Resultados precisam ser separados por blocos de análise.');
-assert.match(resultados,/data-result-carousel/,'Blocos de resultados precisam permitir navegação lateral entre gráficos.');
-assert.match(resultados,/Kaplan-Meier — \$\{g\}/,'Kaplan-Meier deve continuar gerando um gráfico separado por gene.');
+assert.match(resultados,/result-main-stage/,'Os resultados devem usar uma área única de visualização para evitar empilhamento de gráficos.');
+assert.match(resultados,/data-result-subcarousel/,'Conjuntos com vários gráficos do mesmo tipo precisam permitir navegação lateral.');
+assert.match(resultados,/data-result-family-panel/,'Cada tipo de gráfico gerado deve ter um painel próprio na navegação principal.');
+assert.match(resultados,/data-result-shortcut/,'Resultados gerados precisam oferecer atalhos por tipo de gráfico.');
+assert.ok(resultados.includes('`Sobrevida — ${g}`'),'Sobrevida deve continuar gerando uma curva separada por gene.');
 assert.match(resultados,/Sobrevida/,'Bloco de Sobrevida ausente.');
 assert.match(resultados,/Mutações/,'Bloco de Mutações ausente.');
 assert.ok(!resultados.includes('genesis-r-study-card'),'GENESIS-R não deve permanecer como um segundo card de carregamento acima do seletor principal.');
@@ -46,4 +51,4 @@ for(const [name,script] of [['Script.R',scriptR],['Script_LLA_validacao.R',scrip
   assert.match(block,/scale_fill_gradient\(low = "#fef0d9", high = "#d7301f"/,`${name}: paleta da figura R deve permanecer vermelho/laranja`);
 }
 
-console.log('GENESIS V10.7.11 teacher-request regression tests: OK');
+console.log('GENESIS V10.7.13 teacher-request regression tests: OK');

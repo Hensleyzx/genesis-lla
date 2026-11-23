@@ -3,7 +3,7 @@ import { univariate as coxUnivariate } from './cox.js';
 import { bhFdr } from './stats.js';
 import { buildReferenceVectors, transformExpressionValue } from './analysis-engine.js';
 
-function finite(v){return Number.isFinite(Number(v));}
+function finite(v){return v!==null&&v!==undefined&&String(v).trim()!==''&&Number.isFinite(Number(v));}
 
 export function buildStudyAnalytics(dp){
   const vectors=buildReferenceVectors(dp);
