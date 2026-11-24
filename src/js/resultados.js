@@ -9,6 +9,7 @@ import { buildDemographicHeatmap } from './demographic-heatmap.js';
 import { univariate as coxUnivariate } from './cox.js';
 import { bhFdr } from './stats.js';
 import { analyzeSurvival, atRiskAt } from './survival.js';
+import { individualRocAnalysis, combinationRocAnalysis } from './predictive-roc.js';
 import Chart from 'chart.js/auto';
 
 injectFontAwesome();
@@ -25,6 +26,7 @@ let coxRReference = [];
 let generatedGraphTypes = new Set();
 let generatedGraphConfigs = new Map();
 let activeResultFamily = null;
+let predictiveCache = new Map();
 
 content.innerHTML = `
 ${warningBanner()}
@@ -56,6 +58,7 @@ async function refreshWorkspace() {
   generatedGraphTypes.clear();
   generatedGraphConfigs.clear();
   activeResultFamily = null;
+  predictiveCache.clear();
   dp = await loadDatapack().catch(() => null);
   const host = document.getElementById('results-workspace');
   if (!dp) {
@@ -118,6 +121,8 @@ function renderWorkspace(top10) {
       <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="mutations"><i class="fa-solid fa-dna"></i><span><strong>Mutações por gene</strong><small>Compare os genes que você escolher</small></span></button>
       <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="survival"><i class="fa-solid fa-heart-pulse"></i><span><strong>Sobrevida</strong><small>Compare as curvas dos genes escolhidos</small></span></button>
       <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="risk"><i class="fa-solid fa-chart-simple"></i><span><strong>Risco relativo</strong><small>Veja a associação dos genes com o desfecho</small></span></button>
+      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="rocgene"><i class="fa-solid fa-bullseye"></i><span><strong>Desempenho dos genes</strong><small>ROC/AUC de cada gene isolado</small></span></button>
+      <button type="button" class="analysis-category-tab" role="tab" aria-selected="false" data-analysis-tab="roccombo"><i class="fa-solid fa-code-branch"></i><span><strong>Combinações de genes</strong><small>ROC/AUC de modelos multivariados</small></span></button>
       <button type="button" class="analysis-category-tab analysis-category-tab--secondary" role="tab" aria-selected="false" data-analysis-tab="more"><i class="fa-solid fa-ellipsis"></i><span><strong>Outras análises</strong><small>Sexo, idade, expressão e mapa de mutações</small></span></button>
     </div>
 
@@ -175,6 +180,36 @@ function renderWorkspace(top10) {
         </div>
       </section>
 
+      <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="rocgene" hidden>
+        <div class="analysis-category-panel__head">
+          <span class="analysis-builder-kicker">ROC / AUC INDIVIDUAL</span>
+          <strong>Quanto cada gene consegue diferenciar recaída de ausência de recaída?</strong>
+          <small>Equivalente à lógica da Figura 4 do trabalho de referência: cada gene é avaliado isoladamente. AUC mede capacidade discriminatória e não demonstra que o gene cause LLA.</small>
+        </div>
+        <div class="analysis-note mt-4"><strong>Desfecho usado:</strong> FIRST_EVENT — Relapse vs None · seleção basal por paciente. ${rocEndpointSummary()}</div>
+        ${genePicker('Escolha os genes para testar','Marque os genes candidatos. Se a triagem por expressão diferencial estiver disponível, você pode carregar os genes mais bem ranqueados automaticamente.')}
+        ${volcanoGeneShortcut()}
+        <div class="analysis-direct-action mt-4">
+          <div><strong>Desempenho de cada gene</strong><small>Curva ROC e AUC individual para cada gene selecionado.</small></div>
+          <button type="button" class="btn btn-primary" data-run-analysis="rocgene"><i class="fa-solid fa-bullseye"></i> Calcular ROC/AUC por gene</button>
+        </div>
+      </section>
+
+      <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="roccombo" hidden>
+        <div class="analysis-category-panel__head">
+          <span class="analysis-builder-kicker">ROC / AUC MULTIVARIADA</span>
+          <strong>Vários genes juntos melhoram o desempenho?</strong>
+          <small>Equivalente à lógica da Figura 6: combinações de 2 a 4 genes são avaliadas em modelos de regressão logística. A AUC é calculada com validação cruzada interna para reduzir otimismo.</small>
+        </div>
+        <div class="analysis-note mt-4"><strong>Como usar:</strong> selecione de 2 a 8 genes candidatos. O GENESIS testa combinações de 2, 3 e 4 genes e ordena os modelos pela AUC. ${rocEndpointSummary()}</div>
+        ${genePicker('Escolha de 2 a 8 genes','Use genes candidatos da triagem/Volcano ou selecione manualmente os biomarcadores que deseja combinar.')}
+        ${volcanoGeneShortcut()}
+        <div class="analysis-direct-action mt-4">
+          <div><strong>Combinações de genes</strong><small>Regressão logística multivariada · AUC em predições de validação cruzada.</small></div>
+          <button type="button" class="btn btn-primary" data-run-analysis="roccombo"><i class="fa-solid fa-code-branch"></i> Testar combinações</button>
+        </div>
+      </section>
+
       <section class="analysis-category-panel" role="tabpanel" data-analysis-panel="more" hidden>
         <div class="analysis-category-panel__head">
           <span class="analysis-builder-kicker">OUTRAS ANÁLISES</span>
@@ -225,9 +260,58 @@ function survivalModeOptions(p) {
     </details>`;
 }
 
+function rocEndpointSummary() {
+  const groups = analytics?.groups || [];
+  const relapse = groups.filter(x => x === 1).length;
+  const none = groups.filter(x => x === 0).length;
+  return `Registros basais com desfecho disponível: Relapse n=${relapse}; None n=${none}.`;
+}
+
+function volcanoGeneShortcut() {
+  const genes = (analytics?.topDEGs || []).slice(0,6).map(x => String(x.gene || '').toUpperCase()).filter(Boolean);
+  if (dp?.pack?.scope !== 'completo' || !genes.length) {
+    return `<div class="analysis-note mt-3"><i class="fa-solid fa-circle-info"></i> A triagem automática pelo Volcano fica disponível quando a coorte é carregada em escopo Completo. Você ainda pode selecionar genes manualmente.</div>`;
+  }
+  return `<div class="analysis-volcano-shortcut mt-3"><button type="button" class="btn btn-secondary btn-sm" data-use-volcano-genes><i class="fa-solid fa-wand-magic-sparkles"></i> Usar genes da triagem Volcano</button><small>Seleciona até 6 genes diferencialmente expressos mais bem ranqueados para continuar a validação ROC/AUC.</small></div>`;
+}
+
+function addGeneToPickers(gene, note='gene adicionado à análise') {
+  gene = String(gene || '').trim().toUpperCase();
+  if (!gene) return;
+  const already = [...document.querySelectorAll('.result-gene')].some(x => String(x.value).toUpperCase() === gene);
+  if (!already) {
+    if (!customGenes.includes(gene)) customGenes.push(gene);
+    document.querySelectorAll('[data-gene-choice-grid]').forEach(host => {
+      host.insertAdjacentHTML('beforeend', `<label class="gene-choice"><input type="checkbox" class="result-gene" value="${esc(gene)}" checked><span><strong>${esc(gene)}</strong><small>${esc(note)}</small></span></label>`);
+      const added = [...host.querySelectorAll('.result-gene')].find(x => String(x.value).toUpperCase() === gene);
+      added?.addEventListener('change', () => {
+        document.querySelectorAll('.result-gene').forEach(other => {
+          if (String(other.value).toUpperCase() === gene) other.checked = added.checked;
+        });
+      });
+    });
+  }
+  document.querySelectorAll('.result-gene').forEach(input => {
+    if (String(input.value).toUpperCase() === gene) input.checked = true;
+  });
+}
+
+function useVolcanoGenes(button) {
+  const genes = (analytics?.topDEGs || []).slice(0,6).map(x => String(x.gene || '').toUpperCase()).filter(Boolean);
+  if (!genes.length) return msg('generation-msg','A triagem Volcano ainda não possui genes candidatos disponíveis.',false);
+  document.querySelectorAll('.result-gene').forEach(input => { input.checked = false; });
+  genes.forEach(g => addGeneToPickers(g,'gene selecionado pela triagem de expressão'));
+  const picker = button?.closest('.analysis-category-panel')?.querySelector('.analysis-gene-picker');
+  const host = picker?.querySelector('[data-gene-msg]');
+  if (host) host.innerHTML = `<div class="alert success"><i class="fa-solid fa-circle-check"></i> ${genes.map(esc).join(', ')} selecionados a partir da triagem por expressão diferencial.</div>`;
+}
+
 function setupDirectAnalysisActions() {
   document.querySelectorAll('[data-run-analysis]').forEach(button => {
     button.addEventListener('click', () => generateAnalysis(button.dataset.runAnalysis));
+  });
+  document.querySelectorAll('[data-use-volcano-genes]').forEach(button => {
+    button.addEventListener('click', () => useVolcanoGenes(button));
   });
   document.getElementById('clear-results')?.addEventListener('click', () => {
     destroyCharts();
@@ -250,12 +334,15 @@ function generateAnalysis(kind) {
   if (kind === 'demographic') types = ['demographic'];
   if (kind === 'mutheat') types = ['mutheat'];
   if (kind === 'differential') types = ['degs','volcano'];
+  if (kind === 'rocgene') types = ['rocgene'];
+  if (kind === 'roccombo') types = ['roccombo'];
   if (!types.length) return;
 
   const survivalMode = selectedSurvivalMode();
-  const requiresGenes = types.some(type => ['selectedmut','km','demographic'].includes(type)) || (types.includes('cox') && !hasExactCoxRReference(survivalMode));
+  const requiresGenes = types.some(type => ['selectedmut','km','demographic','rocgene','roccombo'].includes(type)) || (types.includes('cox') && !hasExactCoxRReference(survivalMode));
   if (requiresGenes && !genes.length) return msg('generation-msg','Escolha pelo menos um gene antes de gerar esta análise.',false);
   if (kind === 'differential' && dp?.pack?.scope !== 'completo') return msg('generation-msg','A análise de expressão e recaída exige o escopo molecular Completo.',false);
+  if (kind === 'roccombo' && (genes.length < 2 || genes.length > 8)) return msg('generation-msg','Para combinações, selecione de 2 a 8 genes.',false);
 
   types.forEach(type => {
     generatedGraphTypes.add(type);
@@ -379,6 +466,20 @@ function addCustomGene(input) {
   setGenePickerMessage(input,`${gene} adicionado. A seleção foi sincronizada entre as análises por biomarcador.`,true);
 }
 
+function predictiveKey(kind, genes) {
+  return `${dp?.pack?.studyId || 'none'}|${kind}|${[...new Set((genes||[]).map(g=>String(g).toUpperCase()))].sort().join(',')}`;
+}
+
+function predictiveAnalysis(kind, genes) {
+  const key = predictiveKey(kind, genes);
+  if (predictiveCache.has(key)) return predictiveCache.get(key);
+  const result = kind === 'rocgene'
+    ? individualRocAnalysis(dp, genes)
+    : combinationRocAnalysis(dp, genes, { minPerGroup:10, maxGenes:8, maxSize:4, maxCombinations:220, folds:5 });
+  predictiveCache.set(key, result);
+  return result;
+}
+
 async function renderGeneratedGraphs(redrawOnly = false, historyTypes = null) {
   if (!dp || !analytics) return;
   const selectedGraphs = [...generatedGraphTypes];
@@ -396,6 +497,8 @@ async function renderGeneratedGraphs(redrawOnly = false, historyTypes = null) {
     if (type === 'selectedmut') cards.push(resultCard('mutations','selectedmut','Frequência de mutações — genes selecionados','Mutações selecionadas',selectedMutationCard(genes)));
     if (type === 'mutheat') cards.push(resultCard('mutations','mutheat','Mapa de mutações — Top 30','Mapa de mutações',mutationHeatmapCard()));
     if (type === 'cox') cards.push(resultCard('cox','cox','Risco relativo dos genes','Risco relativo',coxCard(genes, mode)));
+    if (type === 'rocgene') cards.push(resultCard('predictive','rocgene','Desempenho individual dos genes','Desempenho por gene',rocGeneCard(genes)));
+    if (type === 'roccombo') cards.push(resultCard('predictive','roccombo','Combinações de genes','Combinações',rocComboCard(genes)));
     if (type === 'km') genes.forEach(g => cards.push(resultCard('survival','km',`Sobrevida — ${g}`,`Gene ${g}`,kmCard(g, mode),g)));
     if (type === 'demographic') cards.push(resultCard('demographic','demographic','Expressão por sexo e idade','Sexo e idade',demographicHeatmapCard(genes)));
     if (type === 'degs') cards.push(resultCard('differential','degs','Genes com expressão diferente — recaída vs sem recaída','Genes diferentes',degCard()));
@@ -419,6 +522,14 @@ async function renderGeneratedGraphs(redrawOnly = false, historyTypes = null) {
     const genes = config.genes || [];
     const mode = config.survivalMode || 'basal';
     if (drawCox(genes, mode)) rendered.push({type:'cox', title:'Risco relativo dos genes (Cox)', genes:hasExactCoxRReference(mode)?coxRReference.map(r=>r.Gene):genes, status:hasExactCoxRReference(mode)?'referência R validada':'exploratório local'});
+  }
+  if (selectedGraphs.includes('rocgene')) {
+    const genes = configFor('rocgene').genes || [];
+    if (drawRocGene(genes)) rendered.push({type:'rocgene', title:'Desempenho individual dos genes (ROC/AUC)', genes, status:'exploratório local'});
+  }
+  if (selectedGraphs.includes('roccombo')) {
+    const genes = configFor('roccombo').genes || [];
+    if (drawRocCombo(genes)) rendered.push({type:'roccombo', title:'Combinações de genes (ROC/AUC)', genes, status:'validação cruzada interna'});
   }
   if (selectedGraphs.includes('km')) {
     const config = configFor('km');
@@ -462,6 +573,8 @@ function resultFamilyMeta(key) {
     demographic: { label:'Sexo e idade', technical:'Heatmap demográfico — genes × sexo/idade', icon:'fa-users' },
     degs: { label:'Genes diferentes', technical:'Top DEGs', icon:'fa-arrow-trend-up' },
     volcano: { label:'Diferenças de expressão', technical:'Volcano Plot', icon:'fa-chart-area' },
+    rocgene: { label:'Desempenho por gene', technical:'ROC/AUC individual', icon:'fa-bullseye' },
+    roccombo: { label:'Combinações de genes', technical:'ROC/AUC multivariada', icon:'fa-code-branch' },
   };
   return families[key] || { label:key, technical:'', icon:'fa-chart-column' };
 }
@@ -487,7 +600,7 @@ function buildFamilyContent(items, family) {
 }
 
 function buildGroupedResults(cards) {
-  const familyOrder = ['top30','selectedmut','mutheat','km','cox','demographic','degs','volcano'];
+  const familyOrder = ['top30','selectedmut','mutheat','km','cox','rocgene','roccombo','demographic','degs','volcano'];
   const families = familyOrder.filter(family => cards.some(card => card.family === family));
   if (!families.length) return emptyResultsHtml();
   const initialFamily = families.includes(activeResultFamily) ? activeResultFamily : families[0];
@@ -804,6 +917,97 @@ function volcanoCard() {
   if (dp.pack.scope!=='completo') return noDataCard('Diferenças de expressão — visão geral','Bloqueado no modo Expresso: o painel parcial não reproduz o universo transcriptômico usado pelo R e altera o FDR.');
   if (!(analytics.dea?.table||[]).length) return noDataCard('Diferenças de expressão — visão geral','DEA não disponível nesta coorte.');
   return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(dp.pack.expressionTransform?.label||'escala não informada')}</span><span class="study-pill">escopo completo</span>`)}<div class="card__title">Diferenças de expressão — visão geral</div><div class="card__subtitle">FDR &lt; 0,05 e |log2FC| &gt; 0,5. Esta é uma reprodução exploratória local; para equivalência científica, compare com a saída do Script.R corrigido (limma-trend).</div><div class="single-result-canvas"><canvas id="result-volcano"></canvas></div>${volcanoGraphReport()}</div>`;
+}
+
+function rocGeneCard(genes) {
+  const analysis = predictiveAnalysis('rocgene', genes);
+  if (!analysis.available) {
+    const detail = analysis.missing?.[0]?.reason || 'Nenhum gene selecionado possui dados suficientes para ROC/AUC.';
+    return noDataCard('Desempenho individual dos genes', detail);
+  }
+  const best = analysis.results[0];
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(analysis.endpoint)}</span><span class="study-pill">basal por paciente</span>`)}
+    <div class="card__title">Desempenho individual dos genes</div>
+    <div class="card__subtitle"><strong>ROC/AUC individual.</strong> Cada gene é testado isoladamente para distinguir registros com recaída de registros sem recaída. Nesta coorte, esta é uma análise preditiva/prognóstica de recaída — não um teste diagnóstico de LLA versus indivíduos saudáveis.</div>
+    <div class="roc-result-grid mt-4">
+      <div class="roc-result-panel"><strong>Comparação das AUCs</strong><small>Quanto maior a AUC, maior a capacidade discriminatória observada na coorte.</small><div class="single-result-canvas roc-ranking-canvas"><canvas id="result-roc-gene-bars"></canvas></div></div>
+      <div class="roc-result-panel"><strong>Melhor gene nesta execução: ${esc(best.gene)}</strong><small>AUC ${best.auc.toFixed(3)} · IC95% aproximado ${best.ci95.lower.toFixed(3)}–${best.ci95.upper.toFixed(3)}</small><div class="single-result-canvas roc-curve-canvas"><canvas id="result-roc-gene-curve"></canvas></div></div>
+    </div>
+    <div id="roc-gene-report" class="mt-4"></div>
+    <div id="roc-gene-meta" class="mt-4"></div>
+  </div>`;
+}
+
+function rocComboCard(genes) {
+  const analysis = predictiveAnalysis('roccombo', genes);
+  if (!analysis.available) return noDataCard('Combinações de genes', analysis.reason || 'Nenhuma combinação pôde ser avaliada.');
+  const best = analysis.results[0];
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">${esc(analysis.endpoint)}</span><span class="study-pill">validação cruzada interna</span>`)}
+    <div class="card__title">Combinações de genes</div>
+    <div class="card__subtitle"><strong>ROC/AUC multivariada.</strong> Modelos de regressão logística combinam de 2 a 4 genes. A AUC é calculada a partir de predições de validação cruzada estratificada, reduzindo o otimismo de avaliar o modelo nos mesmos casos usados no ajuste.</div>
+    <div class="roc-result-grid mt-4">
+      <div class="roc-result-panel"><strong>Melhores combinações</strong><small>${analysis.tested} combinação(ões) candidata(s) avaliadas ou verificadas nesta seleção.</small><div class="single-result-canvas roc-ranking-canvas"><canvas id="result-roc-combo-bars"></canvas></div></div>
+      <div class="roc-result-panel"><strong>Melhor combinação: ${esc(best.label)}</strong><small>AUC CV ${best.auc.toFixed(3)} · n=${best.n} · ${best.folds}-fold</small><div class="single-result-canvas roc-curve-canvas"><canvas id="result-roc-combo-curve"></canvas></div></div>
+    </div>
+    <div id="roc-combo-report" class="mt-4"></div>
+    <div id="roc-combo-meta" class="mt-4"></div>
+  </div>`;
+}
+
+function rocReferenceLinePlugin(id='rocAucReference') {
+  return {id,afterDraw(chart){
+    const x=chart.scales?.x;if(!x)return;
+    const px=x.getPixelForValue(.5),ctx=chart.ctx;
+    ctx.save();ctx.setLineDash([5,5]);ctx.strokeStyle='rgba(120,130,150,.72)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(px,chart.chartArea.top);ctx.lineTo(px,chart.chartArea.bottom);ctx.stroke();ctx.restore();
+  }};
+}
+
+function rocCurveDatasets(points,label) {
+  return [
+    {label,data:(points||[]).map(p=>({x:p.fpr,y:p.tpr})),borderColor:'rgba(18,126,133,.95)',backgroundColor:'rgba(18,126,133,.12)',pointRadius:2,pointHoverRadius:4,tension:0,fill:false},
+    {label:'Referência aleatória',data:[{x:0,y:0},{x:1,y:1}],borderColor:'rgba(130,140,160,.7)',borderDash:[6,5],pointRadius:0,tension:0,fill:false}
+  ];
+}
+
+function drawRocGene(genes) {
+  const analysis = predictiveAnalysis('rocgene', genes);
+  const bars=document.getElementById('result-roc-gene-bars'),curve=document.getElementById('result-roc-gene-curve');
+  if(!analysis.available||!bars||!curve)return false;
+  const t=getChartTheme(),ranked=analysis.results.slice(0,12),d=[...ranked].sort((a,b)=>a.auc-b.auc),best=analysis.results[0];
+  charts.push(new Chart(bars,{type:'bar',data:{labels:d.map(x=>x.gene),datasets:[{label:'AUC',data:d.map(x=>x.auc),backgroundColor:'rgba(18,126,133,.76)',borderColor:'rgba(12,96,102,.95)',borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`AUC ${Number(c.raw).toFixed(3)}`,afterLabel:c=>{const r=d[c.dataIndex];return `IC95% ${r.ci95.lower.toFixed(3)}–${r.ci95.upper.toFixed(3)} · Relapse ${r.nPos} / None ${r.nNeg}`;}}}},scales:{x:{min:.45,max:1,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'AUC (0,5 = discriminação aleatória)',color:t.text}},y:{ticks:{color:t.text},grid:{display:false}}}},plugins:[rocReferenceLinePlugin('rocGeneReference'),aucBarValueLabels(d,'rocGeneLabels')]}));
+  charts.push(new Chart(curve,{type:'line',data:{datasets:rocCurveDatasets(best.points,`${best.gene} · AUC ${best.auc.toFixed(3)}`)},options:{responsive:true,maintainAspectRatio:false,parsing:false,animation:false,plugins:{legend:{labels:{color:t.text}}},scales:{x:{min:0,max:1,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'1 − Especificidade (taxa de falso positivo)',color:t.text}},y:{min:0,max:1,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'Sensibilidade (taxa de verdadeiro positivo)',color:t.text}}}}}));
+  const report=document.getElementById('roc-gene-report');
+  if(report) report.innerHTML=graphReport({
+    title:'Leitura da ROC/AUC individual',
+    what:'Cada gene é avaliado isoladamente pela expressão basal para separar FIRST_EVENT=Relapse de FIRST_EVENT=None. A direção é automaticamente orientada para representar a melhor separação pelo gene.',
+    finding:`${best.gene} apresentou a maior AUC entre os genes avaliados nesta execução: ${best.auc.toFixed(3)} (IC95% aproximado ${best.ci95.lower.toFixed(3)}–${best.ci95.upper.toFixed(3)}; n=${best.n}).`,
+    caution:'AUC mede discriminação na coorte estudada. Não prova causalidade, não substitui validação externa e, neste endpoint, não representa diagnóstico de LLA versus pessoa saudável.',
+    source:'Exploratório local · expressão basal · FIRST_EVENT Relapse vs None'
+  });
+  const meta=document.getElementById('roc-gene-meta');
+  if(meta) meta.innerHTML=`<div class="table-wrap"><table class="data-table"><thead><tr><th>Gene</th><th>AUC</th><th>IC95% aprox.</th><th>n</th><th>Direção</th></tr></thead><tbody>${analysis.results.map(r=>`<tr><td><strong>${esc(r.gene)}</strong></td><td>${r.auc.toFixed(3)}</td><td>${r.ci95.lower.toFixed(3)}–${r.ci95.upper.toFixed(3)}</td><td>${r.n}</td><td>${esc(r.direction)}</td></tr>`).join('')}</tbody></table></div>${analysis.missing.length?`<p class="chart-note mt-3">Não avaliados: ${analysis.missing.map(x=>`${esc(x.gene)} — ${esc(x.reason)}`).join(' · ')}</p>`:''}`;
+  return true;
+}
+
+function drawRocCombo(genes) {
+  const analysis=predictiveAnalysis('roccombo',genes);
+  const bars=document.getElementById('result-roc-combo-bars'),curve=document.getElementById('result-roc-combo-curve');
+  if(!analysis.available||!bars||!curve)return false;
+  const t=getChartTheme(),ranked=analysis.results.slice(0,10),d=[...ranked].sort((a,b)=>a.auc-b.auc),best=analysis.results[0];
+  charts.push(new Chart(bars,{type:'bar',data:{labels:d.map(x=>x.label),datasets:[{label:'AUC CV',data:d.map(x=>x.auc),backgroundColor:'rgba(94,70,145,.76)',borderColor:'rgba(72,52,119,.95)',borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`AUC CV ${Number(c.raw).toFixed(3)}`,afterLabel:c=>{const r=d[c.dataIndex];return `n=${r.n} · ${r.folds}-fold · ${r.genes.length} genes`;}}}},scales:{x:{min:0,max:1,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'AUC em validação cruzada',color:t.text}},y:{ticks:{color:t.text,font:{size:10}},grid:{display:false}}}},plugins:[rocReferenceLinePlugin('rocComboReference'),aucBarValueLabels(d,'rocComboLabels')]}));
+  charts.push(new Chart(curve,{type:'line',data:{datasets:rocCurveDatasets(best.points,`${best.label} · AUC ${best.auc.toFixed(3)}`)},options:{responsive:true,maintainAspectRatio:false,parsing:false,animation:false,plugins:{legend:{labels:{color:t.text}}},scales:{x:{min:0,max:1,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'1 − Especificidade',color:t.text}},y:{min:0,max:1,ticks:{color:t.muted},grid:{color:t.grid},title:{display:true,text:'Sensibilidade',color:t.text}}}}}));
+  const report=document.getElementById('roc-combo-report');
+  if(report) report.innerHTML=graphReport({
+    title:'Leitura das combinações de genes',
+    what:'Cada combinação é ajustada por regressão logística multivariada com expressão dos genes selecionados. A AUC é calculada usando predições de validação cruzada estratificada, e não diretamente nos casos usados para ajustar cada modelo.',
+    finding:`A melhor combinação nesta execução foi ${best.label}, com AUC de validação cruzada ${best.auc.toFixed(3)} (n=${best.n}; ${best.folds}-fold).`,
+    caution:'Comparar muitas combinações na mesma coorte aumenta o risco de seleção otimista. O melhor painel precisa ser confirmado em uma coorte independente antes de qualquer uso clínico.',
+    source:'Exploratório local · regressão logística L2 · validação cruzada interna'
+  });
+  const meta=document.getElementById('roc-combo-meta');
+  if(meta) meta.innerHTML=`<div class="table-wrap"><table class="data-table"><thead><tr><th>Combinação</th><th>AUC CV</th><th>n</th><th>Validação</th></tr></thead><tbody>${analysis.results.slice(0,20).map(r=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${r.auc.toFixed(3)}</td><td>${r.n}</td><td>${r.folds}-fold</td></tr>`).join('')}</tbody></table></div><p class="chart-note mt-3">Foram consideradas combinações de 2 a ${analysis.maxSize} genes entre os biomarcadores selecionados. Modelos com dados incompletos ou amostra insuficiente são descartados.</p>`;
+  return true;
 }
 
 function coxCard(genes, mode = selectedSurvivalMode()) {
@@ -1137,6 +1341,18 @@ function saveHistory(items) {
 }
 
 function destroyCharts(){charts.forEach(c=>{try{c.destroy()}catch{}});charts=[];}
+function aucBarValueLabels(rows,id='genesisAucBarValueLabels'){
+  return{id,afterDatasetsDraw(chart){
+    const meta=chart.getDatasetMeta(0),ctx=chart.ctx,x=chart.scales.x;
+    ctx.save();ctx.font='600 11px sans-serif';ctx.textBaseline='middle';ctx.fillStyle=getChartTheme().text;
+    meta.data.forEach((bar,i)=>{
+      const v=Number(rows[i]?.auc);if(!Number.isFinite(v)||!bar)return;
+      const px=Math.min(x.right-2,bar.x+7);ctx.textAlign=px>x.right-42?'right':'left';
+      ctx.fillText(v.toFixed(3),px>x.right-42?x.right-3:px,bar.y);
+    });
+    ctx.restore();
+  }};
+}
 function barValueLabels(rows){
   return{id:'genesisBarValueLabels',afterDatasetsDraw(chart){
     const meta=chart.getDatasetMeta(0),ctx=chart.ctx,x=chart.scales.x;

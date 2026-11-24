@@ -1,11 +1,11 @@
-# GENESIS LLA V10.7.12 — navegação clínica simplificada
+# GENESIS LLA V10.7.15 — ROC/AUC individual e combinações de genes
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
 ## Fluxo atual
 
 - **Análise do Paciente**: entrada de identificação, idade, sexo, leucócitos, subtipo, BCR-ABL1, mutações somáticas e expressão com escala informada. O caso pode ser comparado com 1–5 coortes já carregadas.
-- **Estudos & Gráficos**: seleção/carregamento de estudos LLA e geração de Top 30 mutacional, heatmap, Kaplan–Meier, Cox, DEA e Volcano conforme a disponibilidade e os critérios mínimos.
+- **Estudos & Gráficos**: seleção/carregamento de estudos LLA e geração de principais genes mutados, Kaplan–Meier, Cox, DEA/Volcano, ROC/AUC individual e ROC/AUC multivariada de combinações de genes, conforme a disponibilidade e os critérios mínimos.
 - **Histórico**: mantém separadas as análises de pacientes e os gráficos de coortes produzidos no navegador.
 - **Resultados do R**: permanecem separados dos cálculos exploratórios locais e exibem diretamente as saídas fornecidas pelo roteiro R de referência do projeto.
 - **Sobre o Projeto**: objetivo, autores, metodologia e limites científicos.
@@ -40,7 +40,7 @@ O cadastro salvo preserva os dados clínicos, médico responsável, genes, muta�
 - **Exploratório local**: cálculo feito no navegador e ainda não confrontado com a execução R correspondente.
 - O **Top 30 oficial** do TARGET ALL usa o case list mutacional completo `n=150`, reproduz os percentuais visíveis na figura R fornecida e é exibido em vermelho/laranja como referência principal.
 - A seleção basal por paciente é mantida separadamente para expressão, sobrevida, pareamento e heatmap basal; ela não pode mais alterar o denominador do Top 30 oficial.
-- A área **Montar análise** reúne a escolha do tipo de análise e dos genes necessários, com um único botão **Gerar gráficos selecionados**. Nos resultados, há apenas um atalho por família de gráfico; curvas Kaplan–Meier de vários genes são navegadas internamente com **Anterior/Próximo**.
+- A área **O que você quer analisar?** abre somente os controles necessários para cada análise. Nos resultados, há apenas um atalho por família de gráfico; curvas Kaplan–Meier de vários genes são navegadas internamente com **Anterior/Próximo**.
 
 ## Regras científicas consolidadas
 
@@ -55,6 +55,9 @@ O cadastro salvo preserva os dados clínicos, médico responsável, genes, muta�
 - Em TARGET, a análise basal por paciente prioriza amostra primária e exclui recaída/xenoenxerto/normal quando identificável. O modo compatível com a referência R usa separadamente o universo de amostras de expressão do procedimento de referência; equivalência numérica integral depende da matriz bruta original.
 - Para mutações, o Top 30 usa todas as amostras do case list mutacional perfilado; a seleção basal fica armazenada em um agregado separado para heatmap/pareamento.
 - `DATA_VERSION=12` invalida caches antigos após as revisões de acoplamento expressão/case list e da disponibilidade do endpoint de sobrevida.
+- ROC/AUC individual usa expressão basal por paciente e `FIRST_EVENT` para comparar **Relapse vs None**; a direção do marcador é explicitada e a AUC não é apresentada como prova de causalidade.
+- Combinações de 2 a 4 genes usam regressão logística multivariada com regularização L2. A AUC é calculada em predições de validação cruzada estratificada, reduzindo o viés de avaliar o modelo nos mesmos casos usados no ajuste.
+- A análise combinatória aceita de 2 a 8 genes por execução e não é apresentada como modelo clínico validado; a melhor combinação precisa de validação externa independente.
 
 ## Interface e deploy
 
@@ -79,6 +82,9 @@ npm run build
 - integridade da referência Top 30 validada contra R;
 - regressão específica das alterações solicitadas pelo orientador (Top 30 n=150, paleta R, separação do n=81 e botão Gerar gráficos);
 - fallback de inicialização em todas as rotas HTML.
+- regressão ROC/AUC com marcador perfeito, direção invertida, genes ausentes e combinações multivariadas;
+- fuzz ROC/AUC em 300 coortes sintéticas adicionais, com dados ausentes e diferentes tamanhos de grupo;
+- regressão de interface para garantir que ROC individual, combinações e atalho de genes do Volcano permaneçam acessíveis.
 
 ## Segurança científica
 
@@ -172,3 +178,15 @@ A V10.7.14 consolida uma rodada de revisão após o fluxo intuitivo da V10.7.13.
 - **Selecionar os 10** afeta apenas os dez genes-base e não genes adicionados manualmente; genes manuais são preservados quando a área de análise é redesenhada.
 
 Além da suíte existente, foi executado estresse adicional com 2.000 coortes sintéticas contendo censura, empates e dados ausentes. As proteções de KM/Cox e os invariantes estatísticos permaneceram válidos.
+
+
+## V10.7.15 — ROC/AUC individual e combinações de genes
+
+A V10.7.15 implementa no GENESIS a lógica estatística das Figuras 4 e 6 do trabalho de referência mostrado pelo orientador, adaptada para LLA e para o endpoint realmente disponível nas coortes do sistema.
+
+- **Desempenho dos genes**: cada gene selecionado é avaliado isoladamente por curva ROC/AUC usando expressão basal e `FIRST_EVENT = Relapse vs None`. O painel mostra ranking de AUC, curva ROC do melhor gene, IC95% aproximado, número de casos e direção da associação.
+- **Combinações de genes**: testa combinações de 2, 3 e 4 genes entre 2–8 candidatos. Cada conjunto é ajustado por regressão logística multivariada com regularização L2 e avaliado por validação cruzada estratificada; o painel mostra as melhores AUCs e a ROC do melhor conjunto.
+- **Fluxo Volcano → ROC**: quando a coorte está em escopo Completo e a DEA possui resultados, o botão **Usar genes da triagem Volcano** seleciona até seis genes diferencialmente expressos mais bem ranqueados para continuar a validação ROC/AUC.
+- **Terminologia**: como as coortes atuais com esse endpoint contêm pacientes com LLA, a tela descreve a análise como capacidade discriminatória/preditiva de recaída. O sistema não chama esse resultado de diagnóstico de LLA versus indivíduo saudável.
+- **Guardrails**: ROC individual exige amostra mínima por grupo; combinações exigem pelo menos 10 registros por grupo, no máximo 8 genes selecionados e no máximo 220 modelos candidatos por execução.
+- O módulo é marcado como **exploratório local** e não altera as referências R já validadas para Top 30/Cox/KM.
