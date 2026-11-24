@@ -1,5 +1,13 @@
+import { individualRocAnalysis } from './predictive-roc.js';
 import { transformExpressionValue } from './analysis-engine.js';
 import { clinicalAgeYears as normalizedClinicalAgeYears } from './clinical-utils.js';
+
+export const DEMOGRAPHIC_AGE_CUTOFF = 7;
+
+export function rankDemographicGenes(dp) {
+  const candidates = (dp?.expr || []).map(row => row.symbol).filter(Boolean);
+  return individualRocAnalysis(dp, candidates, {includePoints:false});
+}
 
 function finiteNumber(value) {
   if (value == null || String(value).trim() === '') return NaN;
@@ -20,14 +28,14 @@ export function clinicalAgeYears(row = {}) {
 }
 
 export function median(values = []) {
-  const v = values.map(Number).filter(Number.isFinite).sort((a,b) => a-b);
+  const v = values.map(finiteNumber).filter(Number.isFinite).sort((a,b) => a-b);
   if (!v.length) return NaN;
   const m = Math.floor(v.length / 2);
   return v.length % 2 ? v[m] : (v[m-1] + v[m]) / 2;
 }
 
 function sampleSd(values = []) {
-  const v = values.map(Number).filter(Number.isFinite);
+  const v = values.map(finiteNumber).filter(Number.isFinite);
   if (v.length < 2) return NaN;
   const mean = v.reduce((a,b)=>a+b,0) / v.length;
   const ss = v.reduce((a,b)=>a + (b-mean)**2, 0);
@@ -54,10 +62,10 @@ function patientIdForSample(dp, sampleId) {
 /**
  * Heatmap demográfico exploratório:
  * - universo: amostras basais já deduplicadas do datapack (dp.rnaSampleIds)
- * - grupos: sexo clínico × idade abaixo/acima da mediana da coorte elegível
+ * - grupos: sexo clínico × idade abaixo de 7 anos / 7 anos ou mais
  * - valor: média do z-score de expressão por gene dentro do grupo
  *
- * A mediana é um divisor descritivo da coorte, não um limiar clínico.
+ * O corte fixo é um divisor descritivo, não um limiar clínico.
  */
 export function buildDemographicHeatmap(dp, requestedGenes = [], { maxGenes = 20, minGroupN = 5 } = {}) {
   const clinicalRows = dp?.clinical?.rows || [];
@@ -84,8 +92,7 @@ export function buildDemographicHeatmap(dp, requestedGenes = [], { maxGenes = 20
     return { available:false, reason:'Poucos casos com expressão, idade e sexo disponíveis simultaneamente.' };
   }
 
-  const cutoff = median(records.map(r=>r.age));
-  if (!Number.isFinite(cutoff)) return { available:false, reason:'Não foi possível calcular a mediana de idade.' };
+  const cutoff = DEMOGRAPHIC_AGE_CUTOFF;
 
   const cutTxt = ageLabel(cutoff);
   const groups = [
@@ -143,7 +150,7 @@ export function buildDemographicHeatmap(dp, requestedGenes = [], { maxGenes = 20
         .filter(Number.isFinite);
       return {
         group:g.key,
-        value:z.length ? z.reduce((a,b)=>a+b,0)/z.length : null,
+        value:z.length >= minGroupN ? z.reduce((a,b)=>a+b,0)/z.length : null,
         n:z.length,
       };
     });
@@ -172,6 +179,6 @@ export function buildDemographicHeatmap(dp, requestedGenes = [], { maxGenes = 20
     groups:cleanGroups,
     rows,
     strongest,
-    method:'Média do z-score de expressão por gene em amostras basais; grupos definidos por sexo clínico e mediana etária da coorte elegível.',
+    method:'Média do z-score de expressão por gene em amostras basais; grupos definidos por sexo clínico e corte etário fixo de 7 anos.',
   };
 }

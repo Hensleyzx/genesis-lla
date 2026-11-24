@@ -5,7 +5,7 @@ import { DEFAULT_LLA_STUDY } from './cbio-api.js';
 import { loadDatapack } from './datapack.js';
 import { buildStudyAnalytics, volcanoPoints } from './research-analytics.js';
 import { buildReferenceVectors, buildRCompatibleReferenceVectors, rCompatibleExpressionValues, transformExpressionValue } from './analysis-engine.js';
-import { buildDemographicHeatmap } from './demographic-heatmap.js';
+import { buildDemographicHeatmap, rankDemographicGenes, DEMOGRAPHIC_AGE_CUTOFF } from './demographic-heatmap.js';
 import { univariate as coxUnivariate } from './cox.js';
 import { bhFdr } from './stats.js';
 import { analyzeSurvival, atRiskAt } from './survival.js';
@@ -229,8 +229,8 @@ function renderWorkspace(top10) {
         </div>
         <div class="analysis-extra-grid mt-4">
           <div class="analysis-extra-card">
-            <div><strong>Expressão por sexo e idade</strong><small>Heatmap demográfico dos genes selecionados.</small></div>
-            ${genePicker('Genes para sexo e idade','Escolha os genes que deseja visualizar por sexo e faixa etária.')}
+            <div><strong>Expressão por sexo e idade</strong><small>Heatmap dos até 20 genes com maior AUC individual na expressão carregada.</small></div>
+            <p class="chart-note">Quatro grupos: feminino e masculino, abaixo de ${DEMOGRAPHIC_AGE_CUTOFF} anos ou a partir de ${DEMOGRAPHIC_AGE_CUTOFF} anos. O ranking usa recaída vs. ausência de recaída, não diagnóstico de LLA.</p>
             <button type="button" class="btn btn-secondary" data-run-analysis="demographic"><i class="fa-solid fa-table-cells"></i> Gerar expressão por sexo e idade</button>
           </div>
           <div class="analysis-extra-card">
@@ -333,7 +333,13 @@ function setupDirectAnalysisActions() {
 }
 
 async function generateAnalysis(kind) {
-  let genes = selectedGenes(), comboOptions = {};
+  let genes = selectedGenes(), comboOptions = {}, demographicRanking = [];
+  if (kind === 'demographic') {
+    const ranked = rankDemographicGenes(dp);
+    demographicRanking = ranked.results.slice(0,20).map(r => ({gene:r.gene,auc:r.auc,n:r.n}));
+    genes = demographicRanking.map(r => r.gene);
+    if (!genes.length) return msg('generation-msg', 'Não há genes com expressão e casos suficientes nos dois grupos para calcular a AUC individual.', false);
+  }
   if (kind === 'volcano-reference') {
     if(dp?.pack?.studyId!==DEFAULT_LLA_STUDY) return;
     const current=dp;
@@ -387,7 +393,7 @@ async function generateAnalysis(kind) {
 
   types.forEach(type => {
     generatedGraphTypes.add(type);
-    generatedGraphConfigs.set(type, { genes:[...genes], survivalMode, comboOptions });
+    generatedGraphConfigs.set(type, { genes:[...genes], survivalMode, comboOptions, demographicRanking });
   });
   activeResultFamily = types[0];
   renderGeneratedGraphs(false, new Set(types));
@@ -582,7 +588,7 @@ async function renderGeneratedGraphs(redrawOnly = false, historyTypes = null) {
   }
   if (selectedGraphs.includes('demographic')) {
     const genes = configFor('demographic').genes || [];
-    if (drawDemographicHeatmap(genes)) rendered.push({type:'demographic', title:'Expressão por sexo e idade', genes});
+    if (drawDemographicHeatmap(genes)) rendered.push({type:'demographic', title:'Expressão por sexo e idade — corte fixo 7 anos', genes});
   }
   if (selectedGraphs.includes('degs') && drawDEGs()) rendered.push({type:'degs', title:'Genes com expressão diferente — recaída vs sem recaída', genes:[]});
   if (selectedGraphs.includes('volcanoR') && drawVolcano(true)) rendered.push({type:'volcanoR',title:'Volcano de referência R — TARGET ALL',genes:[],status:'saída R'});
@@ -887,9 +893,9 @@ function demographicHeatmapCard(genes) {
   const data = buildDemographicHeatmap(dp, genes, { maxGenes:20, minGroupN:5 });
   if (!data.available) return noDataCard('Expressão por sexo e idade', data.reason || 'Dados demográficos e de expressão insuficientes.');
   const groupPills = data.groups.map(g => `<span class="study-pill">${esc(g.label)} · n=${g.n}</span>`).join('');
-  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">PERFIL DEMOGRÁFICO</span><span class="study-pill">basal por paciente</span><span class="study-pill">corte etário: mediana ${esc(data.cutoffLabel)} anos</span>`)}
+  return `<div class="card result-graph-card">${statusHeader(`<span class="study-pill">PERFIL DEMOGRÁFICO</span><span class="study-pill">basal por paciente</span><span class="study-pill">corte fixo: ${esc(data.cutoffLabel)} anos</span>`)}
     <div class="card__title">Expressão por sexo e idade</div>
-    <div class="card__subtitle">Expressão média padronizada (z-score) dos genes selecionados em quatro grupos demográficos. O corte etário é a mediana da própria coorte elegível, usado apenas para visualização e <strong>não</strong> como limiar clínico.</div>
+    <div class="card__subtitle">Até 20 genes com maior AUC individual exploratória (recaída vs. ausência de recaída) entre os genes com expressão carregada. A AUC é estimada na própria coorte; não prova causalidade nem desempenho diagnóstico. O corte fixo de ${DEMOGRAPHIC_AGE_CUTOFF} anos é descritivo, não clínico. <strong>Como ler:</strong> negativo = abaixo da média do gene; positivo = acima; zero = na média; — = dados insuficientes.</div>
     <div class="demographic-group-pills mt-3">${groupPills}</div>
     <div id="result-demographic-heatmap" class="demographic-heatmap-wrap mt-4"></div>
     <div id="demographic-heatmap-report"></div>
@@ -905,8 +911,8 @@ function demographicHeatmapReport(data) {
     finding: strongest && group
       ? `${data.eligibleN} casos basais tinham simultaneamente expressão, idade e sexo utilizáveis. O maior desvio médio absoluto foi observado em ${strongest.gene} no grupo ${group.label} (z=${Number(strongest.value).toFixed(2)}, ${direction} da média do gene).`
       : `${data?.eligibleN || 0} casos basais tinham dados demográficos e expressão utilizáveis.`,
-    caution: `A idade foi dividida pela mediana da coorte (${data?.cutoffLabel || '—'} anos) somente para visualização. Este heatmap é descritivo, não testa significância entre grupos, não demonstra efeito de sexo/idade sobre o gene e não define risco individual.`,
-    source: 'Exploratório local · TARGET ALL/cBioPortal',
+    caution: `A idade foi dividida pelo corte fixo de ${data?.cutoffLabel || '—'} anos somente para visualização. Este heatmap é descritivo, não testa significância entre grupos, não demonstra efeito de sexo/idade sobre o gene e não define risco individual.`,
+    source: 'Exploratório local · coorte ativa do cBioPortal',
   });
 }
 
@@ -920,9 +926,10 @@ function drawDemographicHeatmap(genes) {
     return false;
   }
 
-  const head = data.groups.map(g => `<th><span>${esc(g.short)}</span><small>n=${g.n}</small></th>`).join('');
-  const rows = data.rows.map(row => `<tr><th>${esc(row.gene)}</th>${row.cells.map(cell => {
-    const v = Number(cell.value);
+  const aucs = new Map((generatedGraphConfigs.get('demographic')?.demographicRanking || []).map(r=>[r.gene,r]));
+  const head = data.groups.map(g => `<th><span>${esc(g.label)}</span><small>n=${g.n}</small></th>`).join('');
+  const rows = data.rows.map(row => `<tr><th>${esc(row.gene)}</th><td title="AUC individual exploratória · n=${aucs.get(row.gene)?.n ?? '—'}">${aucs.has(row.gene)?aucs.get(row.gene).auc.toFixed(3).replace('.', ','):'—'}</td>${row.cells.map(cell => {
+    const v = cell.value;
     const label = Number.isFinite(v) ? v.toFixed(2).replace('.', ',') : '—';
     const style = Number.isFinite(v) ? `background:${heatZColor(v)};color:${Math.abs(v) > .8 ? '#fff' : '#17324d'}` : '';
     return `<td style="${style}" title="${esc(row.gene)} · ${esc(data.groups.find(g=>g.key===cell.group)?.label || cell.group)} · z=${label} · n=${cell.n}">${label}</td>`;
@@ -931,13 +938,13 @@ function drawDemographicHeatmap(genes) {
   host.innerHTML = `
     <div class="demographic-heatmap-scroll">
       <table class="demographic-heatmap-table">
-        <thead><tr><th>Gene</th>${head}</tr></thead>
+        <thead><tr><th>Gene</th><th>AUC<small>recaída</small></th>${head}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
     <div class="demographic-heatmap-legend" aria-label="Escala de z-score">
       <span>−2</span><div class="demographic-heatmap-gradient"></div><span>0</span><div class="demographic-heatmap-gradient positive"></div><span>+2</span>
-      <small>Expressão média padronizada (z-score)</small>
+      <small>Azul: abaixo da média · Vermelho: acima da média · —: menos de 5 valores válidos no grupo</small>
     </div>`;
   report.innerHTML = demographicHeatmapReport(data);
   return true;

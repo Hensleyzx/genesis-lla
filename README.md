@@ -1,4 +1,4 @@
-# GENESIS LLA V10.7.16 — Combinações ROC/AUC, Volcano e Forest Plot
+# GENESIS LLA V10.7.17 — Heatmap demográfico por AUC
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
@@ -199,3 +199,10 @@ A V10.7.15 implementa no GENESIS a lógica estatística das Figuras 4 e 6 do tra
 - AUC de FIRST_EVENT Relapse vs None não mede diagnóstico de LLA em pessoas saudáveis, e a seleção dos melhores modelos na mesma coorte exige confirmação externa. A direção de ROC individual é orientada na própria coorte. Eixo X da ROC explicitamente linear. Valores ausentes não são interpretados como zero em ROC ou DEA. Modelos logísticos sem convergência são descartados.
 - Testes adicionais incorporados aos arquivos de testes existentes, mantendo 99 arquivos. Testes Node cobrem 165 modelos, combinações explícitas, amostra comum, entradas inválidas, CSV de referência de 23.405 linhas, escala do Forest Plot e ROC. Build e renderização em navegador ainda precisam de confirmação (registry indisponível no ambiente de teste).
 - Figuras 7/8: heatmap demográfico anterior preservado; estratificação de AUC por sexo/idade fica para revisão posterior. Login permanece inalterado.
+
+
+## V10.7.17 — Ajuste da Figura 7
+- Corte etário fixo de 7 anos (<7 / ≥7), descritivo e não clínico, para ambos os sexos.
+- Seleção automática de até 20 genes com maior AUC individual exploratória para FIRST_EVENT (Relapse vs None), entre genes com expressão carregada. A direção da ROC é orientada na própria coorte; o ranking não é validação independente, não demonstra causalidade e não equivale a diagnóstico de LLA. Os números de casos válidos podem diferir entre genes.
+- Heatmap com z-score médio, AUC por linha, grupos explícitos e valores ausentes ou com menos de cinco observações válidas marcados como —.
+- A Figura 8 (AUC estratificada por sexo e idade) não foi implementada nesta rodada.

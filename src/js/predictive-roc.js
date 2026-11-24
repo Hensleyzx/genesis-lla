@@ -82,7 +82,7 @@ function transformedGeneValues(dp,row){
   return values;
 }
 
-export function individualRocAnalysis(dp,genes,{minPerGroup=8}={}){
+export function individualRocAnalysis(dp,genes,{minPerGroup=8,includePoints=true}={}){
   const selected=normalizedGenes(genes),groups=relapseGroups(dp),expr=expressionRows(dp);
   const results=[],missing=[];
   for(const gene of selected){
@@ -98,6 +98,7 @@ export function individualRocAnalysis(dp,genes,{minPerGroup=8}={}){
       continue;
     }
     const roc=aucFromScores(labels,scores,{orient:true});
+    if (!includePoints) delete roc.points;
     results.push({gene,...roc});
   }
   results.sort((a,b)=>b.auc-a.auc||a.gene.localeCompare(b.gene));
