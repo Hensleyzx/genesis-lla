@@ -22,6 +22,7 @@ function relapseGroups(dp){
 function rocFromPairs(labels,scores){
   const rows=[];
   for(let i=0;i<labels.length;i++){
+    if (!finiteValue(labels[i]) || !finiteValue(scores[i])) continue;
     const y=Number(labels[i]),s=Number(scores[i]);
     if((y===0||y===1)&&Number.isFinite(s)) rows.push({y,s});
   }
@@ -63,7 +64,7 @@ export function aucFromScores(labels,scores,{orient=true}={}){
   if(!Number.isFinite(raw.auc)) return {...raw,rawAuc:raw.auc,flipped:false,direction:'indefinida',ci95:aucCI95(raw.auc,raw.nPos,raw.nNeg)};
   let result=raw,flipped=false;
   if(orient && raw.auc<.5){
-    result=rocFromPairs(labels,scores.map(v=>Number.isFinite(Number(v))?-Number(v):NaN));
+    result=rocFromPairs(labels,scores.map(v=>finiteValue(v)?-Number(v):NaN));
     flipped=true;
   }
   const direction = Math.abs(result.auc-.5)<1e-12 ? 'sem direção discriminatória' : flipped ? 'menor expressão associada ao grupo Relapse' : 'maior expressão associada ao grupo Relapse';
@@ -153,9 +154,9 @@ function fitLogistic(X,y,{lambda=.15,maxIter=80,tol=1e-7}={}){
     const delta=solveLinear(H,g);if(!delta)return null;
     let maxChange=0;
     for(let j=0;j<p;j++){beta[j]+=delta[j];maxChange=Math.max(maxChange,Math.abs(delta[j]));}
-    if(maxChange<tol) break;
+    if(maxChange<tol) return beta.every(Number.isFinite)?beta:null;
   }
-  return beta;
+  return null;
 }
 
 function standardizer(X,indices){
@@ -205,16 +206,27 @@ function completeCaseMatrix(dp,genes,groups){
   return {X,y,missingGenes:[]};
 }
 
-export function combinationRocAnalysis(dp,genes,{minPerGroup=10,maxGenes=8,maxSize=4,maxCombinations=220,folds=5}={}){
+export function combinationRocAnalysis(dp,genes,{minPerGroup=10,maxGenes=8,maxSize=4,maxCombinations=220,folds=5,explicitCombos=null,commonCases=false}={}){
   const selected=normalizedGenes(genes);
   if(selected.length<2) return {available:false,reason:'Selecione pelo menos 2 genes para testar combinações.',results:[],endpoint:'FIRST_EVENT: Relapse vs None'};
-  if(selected.length>maxGenes) return {available:false,reason:`Selecione no máximo ${maxGenes} genes por vez para a análise combinatória.`,results:[],endpoint:'FIRST_EVENT: Relapse vs None'};
+  if(!explicitCombos && selected.length>maxGenes) return {available:false,reason:`Selecione no máximo ${maxGenes} genes por vez para a análise combinatória.`,results:[],endpoint:'FIRST_EVENT: Relapse vs None'};
   const groups=relapseGroups(dp),allCombos=[];
-  for(let size=2;size<=Math.min(maxSize,selected.length);size++) combinations(selected,size,0,[],allCombos);
+  if (explicitCombos) {
+    const seen=new Set();
+    for(const input of explicitCombos){
+      const combo=normalizedGenes(input).sort();
+      if(combo.length<2||combo.length>maxSize||combo.some(g=>!selected.includes(g))) return {available:false,reason:'Cada combinação deve conter 2 a 4 genes distintos da seleção.',results:[],endpoint:'FIRST_EVENT: Relapse vs None'};
+      const key=combo.join('+');if(!seen.has(key)){seen.add(key);allCombos.push(combo);}
+    }
+  } else for(let size=2;size<=Math.min(maxSize,selected.length);size++) combinations(selected,size,0,[],allCombos);
   if(allCombos.length>maxCombinations) return {available:false,reason:`A seleção geraria ${allCombos.length} modelos. Reduza o número de genes para manter a análise interpretável.`,results:[],endpoint:'FIRST_EVENT: Relapse vs None'};
   const results=[],skipped=[];
+  // A busca automática compara os modelos nos mesmos indivíduos e folds.
+  const shared=commonCases?completeCaseMatrix(dp,selected,groups):null;
+  if(shared && (shared.missingGenes.length || shared.y.filter(v=>v===1).length<minPerGroup || shared.y.filter(v=>v===0).length<minPerGroup)) return {available:false,reason:'Casos completos em comum insuficientes para comparar todos os modelos. Reduza a seleção ou informe combinações específicas.',results:[],endpoint:'FIRST_EVENT: Relapse vs None'};
   for(const combo of allCombos){
-    const {X,y,missingGenes}=completeCaseMatrix(dp,combo,groups);
+    const indices=combo.map(g=>selected.indexOf(g));
+    const {X,y,missingGenes}=shared?{X:shared.X.map(row=>indices.map(i=>row[i])),y:shared.y,missingGenes:[]}:completeCaseMatrix(dp,combo,groups);
     if(missingGenes.length){skipped.push({genes:combo,reason:`Expressão não carregada: ${missingGenes.join(', ')}`});continue;}
     const n1=y.filter(v=>v===1).length,n0=y.filter(v=>v===0).length;
     if(n1<minPerGroup||n0<minPerGroup){skipped.push({genes:combo,reason:`Amostra insuficiente (Relapse n=${n1}; None n=${n0}).`});continue;}
@@ -223,5 +235,5 @@ export function combinationRocAnalysis(dp,genes,{minPerGroup=10,maxGenes=8,maxSi
     results.push({genes:combo,label:combo.join(' + '),...cv});
   }
   results.sort((a,b)=>b.auc-a.auc||a.genes.length-b.genes.length||a.label.localeCompare(b.label));
-  return {available:results.length>0,reason:results.length?'':(skipped[0]?.reason||'Nenhuma combinação pôde ser avaliada.'),endpoint:'FIRST_EVENT: Relapse vs None',results,skipped,tested:allCombos.length,method:'Regressão logística multivariada com regularização L2 e validação cruzada estratificada.',validation:`AUC calculada em predições fora da amostra (${Math.min(folds,5)}-fold quando os grupos permitem).`,maxGenes,maxSize};
+  return {available:results.length>0,reason:results.length?'':(skipped[0]?.reason||'Nenhuma combinação pôde ser avaliada.'),endpoint:'FIRST_EVENT: Relapse vs None',results,skipped,tested:allCombos.length,method:'Regressão logística multivariada com regularização L2 e validação cruzada estratificada.',validation:`AUC calculada em predições fora da amostra (${Math.min(folds,5)}-fold quando os grupos permitem).`,maxGenes,maxSize,commonCases,candidateGenes:selected};
 }

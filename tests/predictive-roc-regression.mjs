@@ -69,3 +69,29 @@ function makeDp(nPerGroup=30){
 }
 
 console.log('predictive ROC/AUC regression: OK');
+
+// V10.7.16: múltiplas combinações exatas, deduplicação, busca de pares/trios.
+{
+  const dp=makeDp();
+  const r=combinationRocAnalysis(dp,['GENEA','GENEB','NOISE'],{explicitCombos:[['GENEA','GENEB'],['GENEB','GENEA'],['GENEA','NOISE','GENEB']]});
+  assert.equal(r.tested,2);assert.equal(r.results.length,2);
+  assert.ok(r.results.every(x=>x.genes.includes('GENEA')));
+  assert.ok(!r.results.some(x=>x.label==='GENEB + NOISE'));
+  const invalid=combinationRocAnalysis(dp,['GENEA','GENEB'],{explicitCombos:[['GENEA','NOISE']]});
+  assert.equal(invalid.available,false);
+}
+{
+  const dp=makeDp(40); const genes=Array.from({length:10},(_,i)=>`G${i}`);
+  dp.expr=genes.map((symbol,j)=>({symbol,values:Float64Array.from(dp.rnaSampleIds.map((_,i)=>i%19===0&&j===0?NaN:(i>=40?0.4:0)+Math.sin((i+1)*(j+1)*.71)))}));
+  const r=combinationRocAnalysis(dp,genes,{maxGenes:10,maxSize:3,commonCases:true});
+  assert.equal(r.tested,165);assert.equal(r.results.length,165);assert.equal(r.commonCases,true);
+  assert.equal(new Set(r.results.map(x=>x.n)).size,1);
+  assert.ok(r.results.every((x,i)=>x.auc>=0&&x.auc<=1&&(!i||r.results[i-1].auc>=x.auc)));
+  const unavailable=combinationRocAnalysis(dp,[...genes.slice(0,2),'MISSING'],{maxGenes:10,maxSize:3,commonCases:true});
+  assert.equal(unavailable.available,false);
+}
+{
+  const r=aucFromScores([0,1,0,1,null,1],[1,2,null,'',100,undefined],{orient:false});
+  assert.equal(r.n,2);assert.equal(r.auc,1);
+}
+console.log('V10.7.16 exact combinations, common cohort, 165 models and missing values: OK');

@@ -1,4 +1,4 @@
-# GENESIS LLA V10.7.15 — ROC/AUC individual e combinações de genes
+# GENESIS LLA V10.7.16 — Combinações ROC/AUC, Volcano e Forest Plot
 
 Protótipo acadêmico do GENESIS para Leucemia Linfoblástica Aguda (LLA), com interface web para exploração de coortes públicas e análise exploratória de biomarcadores de um caso individual.
 
@@ -190,3 +190,12 @@ A V10.7.15 implementa no GENESIS a lógica estatística das Figuras 4 e 6 do tra
 - **Terminologia**: como as coortes atuais com esse endpoint contêm pacientes com LLA, a tela descreve a análise como capacidade discriminatória/preditiva de recaída. O sistema não chama esse resultado de diagnóstico de LLA versus indivíduo saudável.
 - **Guardrails**: ROC individual exige amostra mínima por grupo; combinações exigem pelo menos 10 registros por grupo, no máximo 8 genes selecionados e no máximo 220 modelos candidatos por execução.
 - O módulo é marcado como **exploratório local** e não altera as referências R já validadas para Top 30/Cox/KM.
+
+## V10.7.16 — Revisão das análises e navegação
+
+- Triagem por expressão possui aba própria e abre o Volcano primeiro. O cálculo local exige escopo Completo. TARGET ALL também pode exibir a tabela DEA fixa do R em escopo Expresso, identificada como referência e não como recálculo.
+- Forest Plot de referência e local: escala categórica de genes, todos os rótulos no eixo Y. Os HRs e intervalos originais permanecem inalterados.
+- Combinações: busca automática de pares e trios entre até 10 candidatos do ranking mutacional com expressão suficiente (até 165 modelos). Mesmos casos completos e mesmas partições estratificadas para todos os modelos desta busca; se insuficientes, informa o motivo. Ranking das 10 maiores AUCs observadas e seletor de curvas de todos os modelos avaliados. Também aceita até 30 combinações específicas de 2–4 genes, uma por linha, além da seleção anterior de 2–8 genes. Nos modos manuais, os casos completos podem variar por modelo.
+- AUC de FIRST_EVENT Relapse vs None não mede diagnóstico de LLA em pessoas saudáveis, e a seleção dos melhores modelos na mesma coorte exige confirmação externa. A direção de ROC individual é orientada na própria coorte. Eixo X da ROC explicitamente linear. Valores ausentes não são interpretados como zero em ROC ou DEA. Modelos logísticos sem convergência são descartados.
+- Testes adicionais incorporados aos arquivos de testes existentes, mantendo 99 arquivos. Testes Node cobrem 165 modelos, combinações explícitas, amostra comum, entradas inválidas, CSV de referência de 23.405 linhas, escala do Forest Plot e ROC. Build e renderização em navegador ainda precisam de confirmação (registry indisponível no ambiente de teste).
+- Figuras 7/8: heatmap demográfico anterior preservado; estratificação de AUC por sexo/idade fica para revisão posterior. Login permanece inalterado.

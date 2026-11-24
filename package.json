@@ -1,7 +1,7 @@
 {
-  "name": "genesis-lla-v10-7-15-roc-auc",
+  "name": "genesis-lla-v10-7-16-roc-volcano-cox",
   "private": true,
-  "version": "10.7.15",
+  "version": "10.7.16",
   "type": "module",
   "scripts": {
     "dev": "vite",

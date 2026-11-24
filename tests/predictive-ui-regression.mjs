@@ -20,3 +20,16 @@ assert.match(roc,/crossValidatedLogistic/);
 assert.match(css,/\.roc-result-grid/);
 
 console.log('predictive ROC/AUC UI regression: OK');
+
+// V10.7.16: verify the actual chart configurations and action wiring.
+assert.match(js,/data-analysis-tab="volcano"/);
+assert.match(js,/data-run-analysis="volcano-reference"/);
+assert.match(js,/types = \['volcano','degs'\]/);
+assert.match(js,/drawVolcano\(true\)/);
+assert.match(js,/data-run-analysis="roccombo-auto"/);
+assert.match(js,/data-run-analysis="roccombo-manual"/);
+assert.match(js,/id="roc-combo-select"/);
+assert.match(js,/curveChart\.update\('none'\)/);
+assert.equal((js.match(/y:\{type:'category',labels:d\.map\(r=>r\.Gene\),offset:true,reverse:true,ticks:\{color:t\.text,autoSkip:false\}/g)||[]).length,2,'Ambos os Forest Plots devem preservar os rótulos categóricos dos genes.');
+assert.equal((js.match(/x:\{type:'linear',min:0,max:1,ticks:\{color:t\.muted\},grid:\{color:t\.grid\},title:\{display:true,text:'1 − Especificidade/g)||[]).length,2,'ROC precisa de eixo X numérico.');
+console.log('V10.7.16 Volcano, ROC navigation and Forest Plot configuration: OK');

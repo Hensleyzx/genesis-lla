@@ -87,3 +87,18 @@ assert.match(pageJs, /DEGs classificados/);
 assert.match(pageJs, /FDR < 0,05 · sem corte de \|logFC\|/);
 
 console.log('GENESIS-R study integrity: OK');
+
+// The fixed R Volcano remains available independently of the browser's partial gene panel.
+{
+  const {volcanoPoints}=await import('../src/js/research-analytics.js');
+  const fs=await import('node:fs');
+  const lines=fs.readFileSync('public/data/genesis_r/DEA_results_relapse_vs_none.csv','utf8').trim().split(/\r?\n/);
+  const rows=lines.slice(1).map(line=>{const c=line.split(',');return {gene:c[0].replaceAll('"',''),logFC:Number(c[1]),'adj.P.Val':Number(c[5])};});
+  assert.equal(rows.length,23405);
+  const points=volcanoPoints({table:rows});
+  assert.ok(points.length>0&&points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
+  assert.ok(points.some(p=>p.significant));
+  const zeros=volcanoPoints({table:[{gene:'ZERO',logFC:2,'adj.P.Val':0},{gene:'BAD',logFC:2,'adj.P.Val':null}]});
+  assert.equal(zeros.length,1);assert.ok(Number.isFinite(zeros[0].y));
+}
+console.log('V10.7.16 Volcano R real CSV and zero FDR: OK');

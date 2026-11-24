@@ -55,7 +55,7 @@ export function buildStudyAnalytics(dp){
 }
 
 export function volcanoPoints(dea,maxPoints=3000){
-  const all=(dea?.table||[]).filter(x=>finite(x.logFC)&&finite(x['adj.P.Val'])&&Number(x['adj.P.Val'])>0);
+  const all=(dea?.table||[]).filter(x=>finite(x.logFC)&&finite(x['adj.P.Val'])&&Number(x['adj.P.Val'])>=0&&Number(x['adj.P.Val'])<=1);
   const sig=all.filter(x=>Number(x['adj.P.Val'])<.05&&Math.abs(Number(x.logFC))>.5);
   const ns=all.filter(x=>!(Number(x['adj.P.Val'])<.05&&Math.abs(Number(x.logFC))>.5));
   const slots=Math.max(0,maxPoints-sig.length);
@@ -64,7 +64,7 @@ export function volcanoPoints(dea,maxPoints=3000){
   return[...sig,...sampled].map(x=>({
     gene:x.gene,
     x:Number(x.logFC),
-    y:-Math.log10(Number(x['adj.P.Val'])),
+    y:-Math.log10(Math.max(Number.MIN_VALUE,Number(x['adj.P.Val']))),
     adjP:Number(x['adj.P.Val']),
     significant:Number(x['adj.P.Val'])<.05&&Math.abs(Number(x.logFC))>.5,
   }));
